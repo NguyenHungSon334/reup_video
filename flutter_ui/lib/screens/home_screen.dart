@@ -17,17 +17,18 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _urlCtrl       = TextEditingController();
+  final _urlCtrl = TextEditingController();
   final _localPathCtrl = TextEditingController();
-  final _gdriveCtrl    = TextEditingController();
+  final _gdriveCtrl = TextEditingController();
 
-  bool   _useLogo  = true;
-  bool   _useMusic = false;
-  int    _destTab  = 0;
-  bool   _running  = false;
+  bool _useLogo = true;
+  bool _useMusic = false;
+  int _destTab = 0;
+  bool _running = false;
   double _progress = 0;
-  String _logoPath  = '';
+  String _logoPath = '';
   String _musicPath = '';
+  String _reupDriveId = '';
 
   final _logs = <LogEntry>[
     const LogEntry('[00:00:00]', 'Đang khởi động engine...', LogType.info),
@@ -52,17 +53,19 @@ class _HomeScreenState extends State<HomeScreen> {
       final cfg = await widget.api.getConfig();
       if (!mounted) return;
       setState(() {
-        _useLogo  = cfg['use_logo']  as bool?   ?? true;
-        _useMusic = cfg['use_music'] as bool?   ?? false;
-        _logoPath  = cfg['logo_path']  as String? ?? '';
+        _useLogo = cfg['use_logo'] as bool? ?? true;
+        _useMusic = cfg['use_music'] as bool? ?? false;
+        _logoPath = cfg['logo_path'] as String? ?? '';
         _musicPath = cfg['music_path'] as String? ?? '';
-        _gdriveCtrl.text    = cfg['gdrive_folder_id'] as String? ?? '';
-        _localPathCtrl.text = cfg['local_folder']     as String? ?? '';
+        _reupDriveId = cfg['reup_gdrive_folder_id'] as String? ?? '';
+        _gdriveCtrl.text = cfg['gdrive_folder_id'] as String? ?? '';
+        _localPathCtrl.text = cfg['local_folder'] as String? ?? '';
         _destTab = (cfg['save_to'] as String? ?? 'drive') == 'local' ? 1 : 0;
       });
       _addLog('✓ Đã tải cấu hình', LogType.success);
     } on Exception {
-      _addLog('⚠ Không kết nối được backend — chạy start_backend.bat trước', LogType.warn);
+      _addLog('⚠ Không kết nối được backend — chạy start_backend.bat trước',
+          LogType.warn);
     }
   }
 
@@ -87,7 +90,12 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    setState(() { _running = true; _progress = 0; });
+    await _refreshBackendSettings();
+
+    setState(() {
+      _running = true;
+      _progress = 0;
+    });
 
     for (var i = 0; i < videos.length; i++) {
       if (!mounted) break;
@@ -99,26 +107,31 @@ class _HomeScreenState extends State<HomeScreen> {
       await _processOne(v.url, v.useMusic ? _useMusic : false);
     }
 
-    if (mounted) setState(() { _running = false; _progress = 0; });
+    if (mounted)
+      setState(() {
+        _running = false;
+        _progress = 0;
+      });
   }
 
   Future<void> _processOne(String url, bool useMusic) async {
     try {
       final jobId = await widget.api.startJob({
-        'url':              url,
-        'use_logo':         _useLogo,
-        'use_music':        useMusic,
-        'logo_path':        _logoPath,
-        'music_path':       _musicPath,
-        'save_to':          _destTab == 0 ? 'drive' : 'local',
+        'url': url,
+        'use_logo': _useLogo,
+        'use_music': useMusic,
+        'logo_path': _logoPath,
+        'music_path': _musicPath,
+        'save_to': _destTab == 0 ? 'drive' : 'local',
         'gdrive_folder_id': _gdriveCtrl.text.trim(),
-        'local_folder':     _localPathCtrl.text.trim(),
+        'reup_gdrive_folder_id': _reupDriveId.trim(),
+        'local_folder': _localPathCtrl.text.trim(),
       });
       _addLog('▶ Job ${jobId.substring(0, 8)}… bắt đầu', LogType.info);
 
       final channel = widget.api.connectJobLogs(jobId);
       await for (final raw in channel.stream) {
-        final msg  = jsonDecode(raw as String) as Map<String, dynamic>;
+        final msg = jsonDecode(raw as String) as Map<String, dynamic>;
         final type = msg['type'] as String? ?? 'info';
 
         if (type == 'done') {
@@ -135,9 +148,9 @@ class _HomeScreenState extends State<HomeScreen> {
           msg['message'] as String? ?? '',
           switch (type) {
             'success' => LogType.success,
-            'error'   => LogType.error,
-            'warn'    => LogType.warn,
-            _         => LogType.info,
+            'error' => LogType.error,
+            'warn' => LogType.warn,
+            _ => LogType.info,
           },
         );
         if (mounted) {
@@ -162,11 +175,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() => _running = true);
     try {
-      final items = videos
-          .map((v) => {'url': v.url, 'use_music': v.useMusic})
-          .toList();
+      final items =
+          videos.map((v) => {'url': v.url, 'use_music': v.useMusic}).toList();
       final ids = await widget.api.submitToLark(items);
-      _addLog('✓ Đã thêm ${ids.length} bản ghi vào hàng đợi Lark', LogType.success);
+      _addLog(
+          '✓ Đã thêm ${ids.length} bản ghi vào hàng đợi Lark', LogType.success);
       widget.onSubmitted?.call();
     } on Exception catch (e) {
       _addLog('✗ Gửi thất bại: $e', LogType.error);
@@ -175,12 +188,31 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _refreshBackendSettings() async {
+    try {
+      final cfg = await widget.api.getConfig();
+      if (!mounted) return;
+      setState(() {
+        _logoPath = cfg['logo_path'] as String? ?? _logoPath;
+        _musicPath = cfg['music_path'] as String? ?? _musicPath;
+        _reupDriveId = cfg['reup_gdrive_folder_id'] as String? ?? _reupDriveId;
+        _gdriveCtrl.text =
+            cfg['gdrive_folder_id'] as String? ?? _gdriveCtrl.text;
+        _localPathCtrl.text =
+            cfg['local_folder'] as String? ?? _localPathCtrl.text;
+        _destTab = (cfg['save_to'] as String? ?? 'drive') == 'local' ? 1 : 0;
+      });
+    } on Exception {
+      // Ignore refresh failures; use the most recent cached or typed values.
+    }
+  }
+
   Future<void> _saveConfig() async {
     try {
       await widget.api.saveConfig({
-        'use_logo':   _useLogo,
-        'use_music':  _useMusic,
-        'logo_path':  _logoPath,
+        'use_logo': _useLogo,
+        'use_music': _useMusic,
+        'logo_path': _logoPath,
         'music_path': _musicPath,
       });
       _addLog('✓ Đã lưu cấu hình', LogType.success);
@@ -210,20 +242,20 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               Expanded(
                 child: LogPanel(
-                  logs:     _logs,
+                  logs: _logs,
                   progress: _progress,
-                  running:  _running,
+                  running: _running,
                 ),
               ),
             ],
           ),
         ),
         BottomBar(
-          running:   _running,
-          onClear:   () => setState(() => _logs.clear()),
-          onSubmit:  _running ? null : _submitToQueue,
+          running: _running,
+          onClear: () => setState(() => _logs.clear()),
+          onSubmit: _running ? null : _submitToQueue,
           onProcess: _running ? null : _processVideo,
-          onSave:    _saveConfig,
+          onSave: _saveConfig,
         ),
       ],
     );

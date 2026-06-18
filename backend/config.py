@@ -19,13 +19,14 @@ _DEFAULTS: dict[str, Any] = {
     # Drive folder IDs for specific purposes
     "music_gdrive_folder_id": "",
     "logo_gdrive_folder_id": "",
-    "reup_gdrive_folder_id": "",
+    "reup_gdrive_folder_id": "1Oi3Rx1_nMfOIMh-L8iiJ1Z2d34YKJMxy",
     "gdrive_credentials_path": "",
     "save_to": "drive",
     "local_folder": "",
     "lark_app_id": "",
     "lark_app_secret": "",
     "lark_field_link":       "Link video Douyin",
+    "lark_field_link_completed": "Link video hoàn thành",
     "lark_field_music":      "Nhạc",
     "lark_field_music_name": "Tên Nhạc",
     "lark_field_status":     "Status",
@@ -43,4 +44,6 @@ def load_config() -> dict[str, Any]:
 
 
 def save_config(cfg: dict[str, Any]) -> None:
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    existing = load_config()
+    existing.update(cfg)
+    CONFIG_FILE.write_text(json.dumps(existing, indent=2), encoding="utf-8")

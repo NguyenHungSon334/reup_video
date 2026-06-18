@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../constants/colors.dart';
 import '../models/log_entry.dart';
 import '../services/api_service.dart';
@@ -10,7 +11,7 @@ class _RowState {
   const _RowState(this.label, this.progress, {this.isError = false});
   final String label;
   final double progress; // 0.0–1.0
-  final bool   isError;
+  final bool isError;
 }
 
 class DataScreen extends StatefulWidget {
@@ -23,19 +24,19 @@ class DataScreen extends StatefulWidget {
 
 class _DataScreenState extends State<DataScreen> {
   LarkData? _data;
-  bool      _loading    = false;
-  String?   _error;
-  String    _search     = '';
-  bool      _processing = false;
-  double    _progress   = 0;
+  bool _loading = false;
+  String? _error;
+  String _search = '';
+  bool _processing = false;
+  double _progress = 0;
 
-  final _searchCtrl   = TextEditingController();
-  final _selectedIds  = <String>{};
-  final _logs         = <LogEntry>[];
-  final _logoEnabled  = <String, bool>{};
+  final _searchCtrl = TextEditingController();
+  final _selectedIds = <String>{};
+  final _logs = <LogEntry>[];
+  final _logoEnabled = <String, bool>{};
   final _musicEnabled = <String, bool>{};
-  final _rowStates    = <String, _RowState>{};
-  final _hScrollCtrl  = ScrollController();
+  final _rowStates = <String, _RowState>{};
+  final _hScrollCtrl = ScrollController();
 
   @override
   void initState() {
@@ -51,7 +52,10 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Future<void> _fetch() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final data = await widget.api.getLarkData();
       if (!mounted) return;
@@ -61,15 +65,19 @@ class _DataScreenState extends State<DataScreen> {
       for (final row in data.records) {
         final id = row['_record_id'] ?? '';
         if (id.isEmpty) continue;
-        _logoEnabled[id]  = true;
+        _logoEnabled[id] = true;
         _musicEnabled[id] = (row['Nhạc'] ?? '').toLowerCase() == 'yes';
       }
-      setState(() { _data = data; _loading = false; });
-    } on Exception catch (e) {
-      if (mounted) setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
+      setState(() {
+        _data = data;
         _loading = false;
       });
+    } on Exception catch (e) {
+      if (mounted)
+        setState(() {
+          _error = e.toString().replaceFirst('Exception: ', '');
+          _loading = false;
+        });
     }
   }
 
@@ -97,12 +105,14 @@ class _DataScreenState extends State<DataScreen> {
   Future<void> _processSelected() async {
     if (_selectedIds.isEmpty) return;
     final cfg = await widget.api.getConfig();
-    setState(() { _processing = true; _progress = 0; });
+    setState(() {
+      _processing = true;
+      _progress = 0;
+    });
 
     final rows = _filtered;
-    final toProcess = rows
-        .where((r) => _selectedIds.contains(r['_record_id']))
-        .toList();
+    final toProcess =
+        rows.where((r) => _selectedIds.contains(r['_record_id'])).toList();
 
     for (final row in toProcess) {
       final id = row['_record_id'] ?? '';
@@ -113,17 +123,24 @@ class _DataScreenState extends State<DataScreen> {
     await Future.wait(toProcess.map((row) => _processRow(row, cfg)));
 
     await _fetch();
-    if (mounted) setState(() { _processing = false; _progress = 0; _selectedIds.clear(); });
+    if (mounted)
+      setState(() {
+        _processing = false;
+        _progress = 0;
+        _selectedIds.clear();
+      });
   }
 
-  Future<void> _processRow(Map<String, String> row, Map<String, dynamic> cfg) async {
+  Future<void> _processRow(
+      Map<String, String> row, Map<String, dynamic> cfg) async {
     final recordId = row['_record_id'] ?? '';
-    final url      = row['Link video Douyin'] ?? '';
-    final useLogo  = _logoEnabled[recordId]  ?? true;
+    final url = row['Link video Douyin'] ?? '';
+    final useLogo = _logoEnabled[recordId] ?? true;
     final useMusic = _musicEnabled[recordId] ?? false;
 
     if (url.isEmpty) {
-      _addLog('⚠ ${recordId.substring(0, 6)}: không có URL, bỏ qua', LogType.warn);
+      _addLog(
+          '⚠ ${recordId.substring(0, 6)}: không có URL, bỏ qua', LogType.warn);
       _setRowState(recordId, const _RowState('Bỏ qua', 1, isError: true));
       return;
     }
@@ -132,25 +149,26 @@ class _DataScreenState extends State<DataScreen> {
 
     try {
       final jobId = await widget.api.startJob({
-        'url':              url,
-        'record_id':        recordId,
-        'use_logo':         useLogo,
-        'use_music':        useMusic,
-        'logo_path':        cfg['logo_path']         ?? '',
-        'music_path':       cfg['music_path']        ?? '',
-        'save_to':          cfg['save_to']           ?? 'drive',
-        'gdrive_folder_id': cfg['gdrive_folder_id']  ?? '',
-        'local_folder':     cfg['local_folder']      ?? '',
+        'url': url,
+        'record_id': recordId,
+        'use_logo': useLogo,
+        'use_music': useMusic,
+        'logo_path': cfg['logo_path'] ?? '',
+        'music_path': cfg['music_path'] ?? '',
+        'save_to': cfg['save_to'] ?? 'drive',
+        'gdrive_folder_id': cfg['gdrive_folder_id'] ?? '',
+        'reup_gdrive_folder_id': cfg['reup_gdrive_folder_id'] ?? '',
+        'local_folder': cfg['local_folder'] ?? '',
       });
 
       final ch = widget.api.connectJobLogs(jobId);
       await for (final raw in ch.stream) {
-        final msg  = jsonDecode(raw as String) as Map<String, dynamic>;
+        final msg = jsonDecode(raw as String) as Map<String, dynamic>;
         final type = msg['type'] as String? ?? 'info';
         final text = msg['message'] as String? ?? '';
 
         if (type == 'done') {
-          final res     = msg['result'] as Map<String, dynamic>? ?? {};
+          final res = msg['result'] as Map<String, dynamic>? ?? {};
           final success = res['status'] == 'success';
           if (success) {
             _addLog('✓ Hoàn thành: $url', LogType.success);
@@ -163,31 +181,40 @@ class _DataScreenState extends State<DataScreen> {
           break;
         }
 
-        _addLog(text, switch (type) {
-          'success' => LogType.success,
-          'error'   => LogType.error,
-          'warn'    => LogType.warn,
-          _         => LogType.info,
-        });
+        _addLog(
+            text,
+            switch (type) {
+              'success' => LogType.success,
+              'error' => LogType.error,
+              'warn' => LogType.warn,
+              _ => LogType.info,
+            });
 
         if (type == 'error') {
           _setRowState(recordId, _RowState('✗ $text', 1.0, isError: true));
-        } else if (text.contains('Đang tải') || text.contains('Connecting') || text.contains('Downloading')) {
+        } else if (text.contains('Đang tải') ||
+            text.contains('Connecting') ||
+            text.contains('Downloading')) {
           _setRowState(recordId, const _RowState('Đang tải...', 0.20));
         } else if (text.contains('♪') || text.contains('Music')) {
           _setRowState(recordId, const _RowState('Đang xử lý...', 0.50));
         } else if (text.contains('Đang xử lý') || text.contains('ffmpeg')) {
           _setRowState(recordId, const _RowState('Đang xử lý...', 0.60));
-        } else if (text.contains('Uploading') || text.contains('Connecting to Google')) {
+        } else if (text.contains('Uploading') ||
+            text.contains('Connecting to Google')) {
           _setRowState(recordId, const _RowState('Đang tải lên...', 0.80));
         } else {
           final pctMatch = RegExp(r'(\d+)%').firstMatch(text);
           if (pctMatch != null) {
             final pct = (int.tryParse(pctMatch.group(1)!) ?? 0) / 100.0;
-            _setRowState(recordId, _RowState('Đang tải lên ${pctMatch.group(1)}%', 0.80 + pct * 0.18));
+            _setRowState(
+                recordId,
+                _RowState(
+                    'Đang tải lên ${pctMatch.group(1)}%', 0.80 + pct * 0.18));
           }
         }
-        if (mounted) setState(() => _progress = (_progress + 0.01).clamp(0.0, 0.95));
+        if (mounted)
+          setState(() => _progress = (_progress + 0.01).clamp(0.0, 0.95));
       }
     } on Exception catch (e) {
       final msg = e.toString().replaceFirst('Exception: ', '');
@@ -198,22 +225,25 @@ class _DataScreenState extends State<DataScreen> {
 
   Future<void> _showSubmitDialog() async {
     final ctrl = TextEditingController();
-    final ok   = await showDialog<bool>(
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kCard,
         surfaceTintColor: Colors.transparent,
         title: const Text('Thêm URL vào hàng đợi',
-            style: TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w700)),
+            style: TextStyle(
+                color: kText, fontSize: 14, fontWeight: FontWeight.w700)),
         content: SizedBox(
           width: 440,
           child: TextField(
             controller: ctrl,
             maxLines: 8,
             autofocus: true,
-            style: const TextStyle(color: kText, fontSize: 12, fontFamily: 'monospace'),
+            style: const TextStyle(
+                color: kText, fontSize: 12, fontFamily: 'monospace'),
             decoration: InputDecoration(
-              hintText: 'Dán text chia sẻ Douyin...\n(Ký tự € ở cuối = không chèn nhạc)',
+              hintText:
+                  'Dán text chia sẻ Douyin...\n(Ký tự € ở cuối = không chèn nhạc)',
               hintStyle: const TextStyle(color: kMuted, fontSize: 11.5),
               filled: true,
               fillColor: kInputBg,
@@ -239,9 +269,11 @@ class _DataScreenState extends State<DataScreen> {
               backgroundColor: kAccent,
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(5)),
             ),
-            child: const Text('Thêm', style: TextStyle(fontWeight: FontWeight.w600)),
+            child: const Text('Thêm',
+                style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -258,8 +290,9 @@ class _DataScreenState extends State<DataScreen> {
     }
 
     try {
-      final items = videos.map((v) => {'url': v.url, 'use_music': v.useMusic}).toList();
-      final ids   = await widget.api.submitToLark(items);
+      final items =
+          videos.map((v) => {'url': v.url, 'use_music': v.useMusic}).toList();
+      final ids = await widget.api.submitToLark(items);
       _addLog('✓ Đã thêm ${ids.length} bản ghi vào hàng đợi', LogType.success);
       await _fetch();
     } on Exception catch (e) {
@@ -287,7 +320,8 @@ class _DataScreenState extends State<DataScreen> {
               if (_data != null) ...[
                 const SizedBox(width: 10),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: kAccent.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10),
@@ -296,7 +330,9 @@ class _DataScreenState extends State<DataScreen> {
                   child: Text(
                     '${_filtered.length} / ${_data!.total} hàng',
                     style: const TextStyle(
-                        color: kAccent, fontSize: 10.5, fontWeight: FontWeight.w600),
+                        color: kAccent,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
@@ -311,11 +347,13 @@ class _DataScreenState extends State<DataScreen> {
                   decoration: InputDecoration(
                     hintText: 'Tìm kiếm...',
                     hintStyle: const TextStyle(color: kMuted, fontSize: 12),
-                    prefixIcon: const Icon(Icons.search_rounded, size: 16, color: kMuted),
+                    prefixIcon: const Icon(Icons.search_rounded,
+                        size: 16, color: kMuted),
                     filled: true,
                     fillColor: kInputBg,
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(5),
                       borderSide: const BorderSide(color: kBorder),
@@ -326,7 +364,8 @@ class _DataScreenState extends State<DataScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(5),
-                      borderSide: const BorderSide(color: Color.fromRGBO(37, 99, 235, 0.55)),
+                      borderSide: const BorderSide(
+                          color: Color.fromRGBO(37, 99, 235, 0.55)),
                     ),
                   ),
                 ),
@@ -342,8 +381,10 @@ class _DataScreenState extends State<DataScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: kAccent,
                     side: BorderSide(color: kAccent.withOpacity(0.5)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5)),
                   ),
                 ),
               ),
@@ -351,10 +392,13 @@ class _DataScreenState extends State<DataScreen> {
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ElevatedButton.icon(
-                  onPressed: (_processing || _selectedIds.isEmpty) ? null : _processSelected,
+                  onPressed: (_processing || _selectedIds.isEmpty)
+                      ? null
+                      : _processSelected,
                   icon: _processing
                       ? const SizedBox(
-                          width: 13, height: 13,
+                          width: 13,
+                          height: 13,
                           child: CircularProgressIndicator(
                               strokeWidth: 1.5, color: Colors.white))
                       : const Icon(Icons.play_arrow_rounded, size: 15),
@@ -364,15 +408,18 @@ class _DataScreenState extends State<DataScreen> {
                         : _selectedIds.isEmpty
                             ? 'Xử lý'
                             : 'Xử lý ${_selectedIds.length}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kAccent,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: kAccent.withOpacity(0.35),
                     disabledForegroundColor: Colors.white54,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5)),
                     elevation: 0,
                   ),
                 ),
@@ -381,15 +428,19 @@ class _DataScreenState extends State<DataScreen> {
                 onPressed: _loading ? null : _fetch,
                 icon: _loading
                     ? const SizedBox(
-                        width: 13, height: 13,
-                        child: CircularProgressIndicator(strokeWidth: 1.5, color: kTextDim))
+                        width: 13,
+                        height: 13,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 1.5, color: kTextDim))
                     : const Icon(Icons.refresh_rounded, size: 15),
                 label: const Text('Làm mới', style: TextStyle(fontSize: 12)),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: kTextDim,
                   side: const BorderSide(color: kBorder),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
                 ),
               ),
             ],
@@ -402,10 +453,11 @@ class _DataScreenState extends State<DataScreen> {
             children: [
               Expanded(child: _buildBody()),
               _LogPane(
-                logs:     _logs,
+                logs: _logs,
                 progress: _progress,
-                running:  _processing,
-                onClose:  _processing ? null : () => setState(() => _logs.clear()),
+                running: _processing,
+                onClose:
+                    _processing ? null : () => setState(() => _logs.clear()),
               ),
             ],
           ),
@@ -459,7 +511,8 @@ class _DataScreenState extends State<DataScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kAccent,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
                   elevation: 0,
                 ),
               ),
@@ -471,7 +524,8 @@ class _DataScreenState extends State<DataScreen> {
 
     if (_data == null || _data!.fields.isEmpty) {
       return const Center(
-          child: Text('Không có dữ liệu', style: TextStyle(color: kTextDim, fontSize: 13)));
+          child: Text('Không có dữ liệu',
+              style: TextStyle(color: kTextDim, fontSize: 13)));
     }
 
     final rows = _filtered;
@@ -486,12 +540,12 @@ class _DataScreenState extends State<DataScreen> {
           scrollDirection: Axis.vertical,
           padding: const EdgeInsets.all(16),
           child: _DataTable(
-            fields:       _data!.fields,
-            rows:         rows,
-            selectedIds:  _selectedIds,
-            logoEnabled:  _logoEnabled,
+            fields: _data!.fields,
+            rows: rows,
+            selectedIds: _selectedIds,
+            logoEnabled: _logoEnabled,
             musicEnabled: _musicEnabled,
-            rowStates:    _rowStates,
+            rowStates: _rowStates,
             onToggle: (id) => setState(() {
               if (_selectedIds.contains(id)) {
                 _selectedIds.remove(id);
@@ -506,7 +560,7 @@ class _DataScreenState extends State<DataScreen> {
                 _selectedIds.clear();
               }
             }),
-            onLogoToggle:  (id, v) => setState(() => _logoEnabled[id]  = v),
+            onLogoToggle: (id, v) => setState(() => _logoEnabled[id] = v),
             onMusicToggle: (id, v) => setState(() => _musicEnabled[id] = v),
           ),
         ),
@@ -518,14 +572,14 @@ class _DataScreenState extends State<DataScreen> {
 // ── Data table ────────────────────────────────────────────────────────────────
 
 class _DataTable extends StatelessWidget {
-  final List<String>              fields;
+  final List<String> fields;
   final List<Map<String, String>> rows;
-  final Set<String>               selectedIds;
-  final Map<String, bool>         logoEnabled;
-  final Map<String, bool>         musicEnabled;
-  final Map<String, _RowState>    rowStates;
-  final ValueChanged<String>      onToggle;
-  final ValueChanged<bool>        onSelectAll;
+  final Set<String> selectedIds;
+  final Map<String, bool> logoEnabled;
+  final Map<String, bool> musicEnabled;
+  final Map<String, _RowState> rowStates;
+  final ValueChanged<String> onToggle;
+  final ValueChanged<bool> onSelectAll;
   final void Function(String id, bool v) onLogoToggle;
   final void Function(String id, bool v) onMusicToggle;
 
@@ -544,8 +598,8 @@ class _DataTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final allSelected =
-        rows.isNotEmpty && rows.every((r) => selectedIds.contains(r['_record_id']));
+    final allSelected = rows.isNotEmpty &&
+        rows.every((r) => selectedIds.contains(r['_record_id']));
 
     // Nhạc rendered as toggle column — skip from regular data columns
     final dataFields = fields.where((f) => f != 'Nhạc').toList();
@@ -588,15 +642,14 @@ class _DataTable extends StatelessWidget {
               ),
               _IndexCell(i + 1),
               _ToggleCell(
-                value:     logoEnabled[rows[i]['_record_id']]  ?? true,
+                value: logoEnabled[rows[i]['_record_id']] ?? true,
                 onChanged: (v) => onLogoToggle(rows[i]['_record_id'] ?? '', v),
               ),
               _ToggleCell(
-                value:     musicEnabled[rows[i]['_record_id']] ?? false,
+                value: musicEnabled[rows[i]['_record_id']] ?? false,
                 onChanged: (v) => onMusicToggle(rows[i]['_record_id'] ?? '', v),
               ),
-              if (hasProgress)
-                _ProgressCell(rowStates[rows[i]['_record_id']]),
+              if (hasProgress) _ProgressCell(rowStates[rows[i]['_record_id']]),
               ...dataFields.map((f) => _DataCell(rows[i][f] ?? '', field: f)),
             ],
           ),
@@ -609,7 +662,8 @@ class _CheckCell extends StatelessWidget {
   final bool value;
   final ValueChanged<bool?> onChanged;
   final bool isHeader;
-  const _CheckCell({required this.value, required this.onChanged, this.isHeader = false});
+  const _CheckCell(
+      {required this.value, required this.onChanged, this.isHeader = false});
 
   @override
   Widget build(BuildContext context) {
@@ -660,8 +714,12 @@ class _ProgressCell extends StatelessWidget {
     if (state == null) {
       return const SizedBox(width: 160);
     }
-    final isDone  = state!.progress >= 1.0;
-    final color   = state!.isError ? kRed : isDone ? kGreen : kAccent;
+    final isDone = state!.progress >= 1.0;
+    final color = state!.isError
+        ? kRed
+        : isDone
+            ? kGreen
+            : kAccent;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       width: 160,
@@ -671,7 +729,8 @@ class _ProgressCell extends StatelessWidget {
         children: [
           Text(
             state!.label,
-            style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: color, fontSize: 10.5, fontWeight: FontWeight.w600),
             overflow: TextOverflow.ellipsis,
           ),
           if (!isDone) ...[
@@ -704,7 +763,10 @@ class _HeaderCell extends StatelessWidget {
       child: Text(
         text,
         style: const TextStyle(
-            color: kMuted, fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.7),
+            color: kMuted,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.7),
         overflow: TextOverflow.ellipsis,
       ),
     );
@@ -721,7 +783,8 @@ class _IndexCell extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       alignment: Alignment.centerRight,
       child: Text('$idx',
-          style: const TextStyle(color: kMuted, fontSize: 11, fontFamily: 'monospace')),
+          style: const TextStyle(
+              color: kMuted, fontSize: 11, fontFamily: 'monospace')),
     );
   }
 }
@@ -730,6 +793,37 @@ class _DataCell extends StatelessWidget {
   final String text;
   final String field;
   const _DataCell(this.text, {this.field = ''});
+
+  bool get _isUrl => text.startsWith('http://') || text.startsWith('https://');
+
+  Future<void> _openUrl(BuildContext context) async {
+    if (!_isUrl) return;
+
+    final uri = Uri.tryParse(text);
+    if (uri == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Liên kết không hợp lệ')));
+      return;
+    }
+
+    try {
+      final canLaunch = await canLaunchUrl(uri);
+      if (!canLaunch) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Ứng dụng không thể mở liên kết này')));
+        return;
+      }
+
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Không thể mở liên kết trong trình duyệt')));
+      }
+    } catch (err) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Lỗi mở liên kết: ${err.toString()}')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -744,15 +838,58 @@ class _DataCell extends StatelessWidget {
       }
     }
 
+    final textStyle = TextStyle(
+      color: _isUrl ? kAccent : textColor,
+      fontSize: 11.5,
+      decoration: _isUrl ? TextDecoration.underline : TextDecoration.none,
+      decorationThickness: _isUrl ? 1.5 : 0,
+      decorationColor: _isUrl ? kAccent : null,
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       constraints: const BoxConstraints(minWidth: 80, maxWidth: 260),
-      child: Text(
-        text,
-        style: TextStyle(color: textColor, fontSize: 11.5),
-        overflow: TextOverflow.ellipsis,
-        maxLines: 2,
-      ),
+      child: _isUrl
+          ? MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _openUrl(context),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: kAccent.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.open_in_new,
+                            size: 14, color: kAccent),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            text,
+                            style: textStyle.copyWith(fontSize: 11),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : Text(
+              text,
+              style: textStyle,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+            ),
     );
   }
 }
@@ -761,9 +898,9 @@ class _DataCell extends StatelessWidget {
 
 class _LogPane extends StatefulWidget {
   final List<LogEntry> logs;
-  final double         progress;
-  final bool           running;
-  final VoidCallback?  onClose;
+  final double progress;
+  final bool running;
+  final VoidCallback? onClose;
 
   const _LogPane({
     required this.logs,
@@ -820,7 +957,8 @@ class _LogPaneState extends State<_LogPane> {
             child: Row(
               children: [
                 Container(
-                  width: 6, height: 6,
+                  width: 6,
+                  height: 6,
                   decoration: BoxDecoration(
                     color: widget.running ? kAmber : kGreen,
                     shape: BoxShape.circle,
@@ -829,7 +967,9 @@ class _LogPaneState extends State<_LogPane> {
                 const SizedBox(width: 8),
                 const Text('Nhật ký xử lý',
                     style: TextStyle(
-                        color: kText, fontSize: 12, fontWeight: FontWeight.w600)),
+                        color: kText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
                 const Spacer(),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(2),
@@ -847,7 +987,8 @@ class _LogPaneState extends State<_LogPane> {
                   const SizedBox(width: 10),
                   InkWell(
                     onTap: widget.onClose,
-                    child: const Icon(Icons.close_rounded, size: 14, color: kMuted),
+                    child: const Icon(Icons.close_rounded,
+                        size: 14, color: kMuted),
                   ),
                 ],
               ],

@@ -1,4 +1,7 @@
+import io
+import mimetypes
 import os
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -13,11 +16,14 @@ try:
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
-    from googleapiclient.http import MediaFileUpload
+    from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
     GDRIVE_OK = True
 except ImportError:
     GDRIVE_OK = False
+
+
+_DRIVE_FILE_ID_PATTERN = re.compile(r"/d/([\w-]+)|[\?&]id=([\w-]+)")
 
 
 def _gdrive_service(credentials_path: str | None = None):
@@ -54,6 +60,38 @@ def _gdrive_service(credentials_path: str | None = None):
     return build("drive", "v3", credentials=creds)
 
 
+def _extract_drive_file_id(value: str) -> str | None:
+    value = value.strip()
+    if not value:
+        return None
+
+    if re.fullmatch(r"[\w-]{20,}", value):
+        return value
+
+    match = _DRIVE_FILE_ID_PATTERN.search(value)
+    if match:
+        return match.group(1) or match.group(2)
+
+    if "drive.google.com" in value:
+        candidates = re.findall(r"[\w-]{20,}", value)
+        if candidates:
+            return candidates[-1]
+
+    return None
+
+
+def download_gdrive_file(file_id: str, destination_path: str, credentials_path: str | None = None) -> None:
+    if not GDRIVE_OK:
+        raise RuntimeError("Google Drive libs missing. Run: pip install google-api-python-client google-auth-oauthlib")
+    svc = _gdrive_service(credentials_path)
+    request = svc.files().get_media(fileId=file_id, supportsAllDrives=True)
+    with open(destination_path, "wb") as fh:
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+
 def upload_gdrive(src: str, folder_id: str, log: Callable[[str, str], None],
                   credentials_path: str | None = None) -> str:
     log("▶ Connecting to Google Drive...", "info")
@@ -87,7 +125,10 @@ def upload_gdrive(src: str, folder_id: str, log: Callable[[str, str], None],
 
     log(f"▶ Uploading {name}...", "info")
 
-    media = MediaFileUpload(src, mimetype="video/mp4", resumable=True)
+    mime_type, _ = mimetypes.guess_type(src)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+    media = MediaFileUpload(src, mimetype=mime_type, resumable=True)
 
     try:
         req = svc.files().create(
@@ -126,8 +167,20 @@ def list_folder_files(folder_id: str, credentials_path: str | None = None):
 
     svc = _gdrive_service(credentials_path)
     q = f"'{folder_id.strip()}' in parents and trashed = false"
-    resp = svc.files().list(q=q, fields="files(id,name,mimeType,webViewLink)", supportsAllDrives=True).execute()
-    return resp.get("files", [])
+    files: list[dict] = []
+    page_token = None
+    while True:
+        resp = svc.files().list(
+            q=q,
+            fields="nextPageToken, files(id,name,mimeType,webViewLink)",
+            supportsAllDrives=True,
+            pageToken=page_token,
+        ).execute()
+        files.extend(resp.get("files", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    return files
 
 
 def get_file_metadata(file_id: str, credentials_path: str | None = None):

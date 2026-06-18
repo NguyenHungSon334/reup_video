@@ -6,6 +6,7 @@ import threading
 import uuid
 from pathlib import Path
 from typing import Any
+import traceback
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
@@ -17,6 +18,8 @@ from ..services.gdrive import (
     _gdrive_service,
     list_folder_files,
     get_file_metadata,
+    download_gdrive_file,
+    _extract_drive_file_id,
 )
 from fastapi import UploadFile, File, Form
 from ..services.lark import (
@@ -37,12 +40,59 @@ _AUDIO_EXTS = {".mp3", ".aac", ".wav", ".ogg", ".m4a", ".flac"}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _pick_logo(body: dict, cfg: dict) -> str | None:
+def _download_drive_path(path: str, cfg: dict, tmp_dir: str, push) -> str | None:
+    file_id = _extract_drive_file_id(path)
+    if not file_id:
+        return None
+
+    suffix = Path(path).suffix or ""
+    if not suffix:
+        try:
+            meta = get_file_metadata(file_id, credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
+            suffix = Path(meta.get("name", "")).suffix or ""
+        except Exception:
+            suffix = ""
+
+    target = Path(tmp_dir) / f"{file_id}{suffix}"
+    try:
+        push(f"▶ Downloading Drive file {file_id}...", "info")
+        download_gdrive_file(file_id, str(target), credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
+        push(f"✓ Downloaded Drive file: {target.name}", "info")
+        return str(target)
+    except Exception as exc:
+        push(f"⚠ Drive download failed: {exc}", "warn")
+        return None
+
+
+def _pick_logo(body: dict, cfg: dict, tmp_dir: str, push) -> str | None:
     path = body.get("logo_path", "").strip() or cfg.get("logo_path", "").strip()
-    return path if path else None
+    if not path:
+        folder_id = cfg.get("logo_gdrive_folder_id", "").strip()
+        if folder_id:
+            try:
+                files = list_folder_files(folder_id, credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
+                logos = [f for f in files if Path(f.get("name", "")).suffix.lower() in {".png", ".webp", ".jpg", ".jpeg"}]
+                if logos:
+                    chosen = random.choice(logos)
+                    downloaded = _download_drive_path(chosen["id"], cfg, tmp_dir, push)
+                    if downloaded:
+                        return downloaded
+            except Exception as exc:
+                push(f"⚠ Logo folder download failed: {exc}", "warn")
+        return None
+
+    file_path = Path(path)
+    if file_path.is_file():
+        return str(file_path)
+
+    downloaded = _download_drive_path(path, cfg, tmp_dir, push)
+    if downloaded:
+        return downloaded
+
+    return None
 
 
-def _pick_music(body: dict, cfg: dict, push) -> tuple[str | None, str | None]:
+def _pick_music(body: dict, cfg: dict, tmp_dir: str, push) -> tuple[str | None, str | None]:
     """Returns (file_path, file_name). Logs the chosen track."""
     folder = cfg.get("music_folder", "").strip()
     if folder:
@@ -54,9 +104,31 @@ def _pick_music(body: dict, cfg: dict, push) -> tuple[str | None, str | None]:
                 push(f"♪ Music: {chosen.name}", "info")
                 return str(chosen), chosen.name
             push("⚠ Music folder has no audio files", "warn")
+
+    remote_folder_id = cfg.get("music_gdrive_folder_id", "").strip()
+    if remote_folder_id:
+        try:
+            files = list_folder_files(remote_folder_id, credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
+            music_files = [f for f in files if Path(f.get("name", "")).suffix.lower() in _AUDIO_EXTS]
+            if music_files:
+                chosen = random.choice(music_files)
+                downloaded = _download_drive_path(chosen["id"], cfg, tmp_dir, push)
+                if downloaded:
+                    push(f"♪ Music: {chosen['name']}", "info")
+                    return downloaded, chosen["name"]
+        except Exception as exc:
+            push(f"⚠ Drive music folder download failed: {exc}", "warn")
+
     path = body.get("music_path", "").strip()
     if path:
-        return path, Path(path).name
+        file_path = Path(path)
+        if file_path.is_file():
+            return str(file_path), file_path.name
+        downloaded = _download_drive_path(path, cfg, tmp_dir, push)
+        if downloaded:
+            return downloaded, Path(downloaded).name
+        return None, None
+
     return None, None
 
 
@@ -152,7 +224,8 @@ async def gdrive_upload(file: UploadFile = File(...), folder_id: str | None = Fo
             tf.write(content)
 
         link = upload_gdrive(tmp, target, push_log, credentials_path=cfg.get("gdrive_credentials_path", "") or None)
-        meta = get_file_metadata(link.split("id=")[-1] if "id=" in link else None, credentials_path=cfg.get("gdrive_credentials_path", "") or None) if False else {"webViewLink": link}
+        file_id = _extract_drive_file_id(link) or None
+        meta = get_file_metadata(file_id, credentials_path=cfg.get("gdrive_credentials_path", "") or None) if file_id else {"webViewLink": link}
         return {"ok": True, "link": link, "logs": logs, "meta": meta}
     except Exception as exc:
         return {"ok": False, "error": str(exc), "logs": logs}
@@ -190,6 +263,7 @@ async def get_lark_fields():
 def _lark_field_map(cfg: dict) -> dict:
     return {
         "link":       cfg.get("lark_field_link",       "Link"),
+        "link_completed": cfg.get("lark_field_link_completed", "Link completed"),
         "music":      cfg.get("lark_field_music",      "Nhạc"),
         "music_name": cfg.get("lark_field_music_name", "Tên nhạc"),
         "status":     cfg.get("lark_field_status",     "Status"),
@@ -215,6 +289,9 @@ async def submit_records(body: dict):
             app_id, app_secret, items, field_map=_lark_field_map(cfg)
         )
     except Exception as exc:
+        # Print full traceback to server console for debugging
+        tb = traceback.format_exc()
+        print("[ERROR] /records/submit exception:\n", tb)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"record_ids": record_ids, "count": len(record_ids)}
 
@@ -262,8 +339,8 @@ async def start_job(body: dict):
 
             use_logo  = body.get("use_logo", False)
             use_music = body.get("use_music", False)
-            logo      = _pick_logo(body, cfg) if use_logo else None
-            music, music_name = _pick_music(body, cfg, push) if use_music else (None, None)
+            logo      = _pick_logo(body, cfg, tmp, push) if use_logo else None
+            music, music_name = _pick_music(body, cfg, tmp, push) if use_music else (None, None)
 
             if music_name:
                 lark_update({"music_name": music_name})
@@ -292,19 +369,21 @@ async def start_job(body: dict):
                 push(f"✓ Saved: {final}", "success")
                 result = {"status": "success", "path": final}
             else:
-                    _DEFAULT_FOLDER = cfg.get("reup_gdrive_folder_id") or cfg.get("gdrive_folder_id") or "1sCqlg4vQs2TlaiqlFUdrg9uAP7pQwxeh"
-                    folder_id = (
-                        body.get("reup_gdrive_folder_id")
-                        or body.get("gdrive_folder_id")
-                        or cfg.get("reup_gdrive_folder_id")
-                        or cfg.get("gdrive_folder_id")
-                        or _DEFAULT_FOLDER
-                    ).strip()
-                    credentials_path = cfg.get("gdrive_credentials_path", "").strip() or None
+                _DEFAULT_FOLDER = cfg.get("reup_gdrive_folder_id") or cfg.get("gdrive_folder_id") or "1Oi3Rx1_nMfOIMh-L8iiJ1Z2d34YKJMxy"
+                folder_id = (
+                    body.get("reup_gdrive_folder_id")
+                    or body.get("gdrive_folder_id")
+                    or cfg.get("reup_gdrive_folder_id")
+                    or cfg.get("gdrive_folder_id")
+                    or _DEFAULT_FOLDER
+                ).strip()
+                if not folder_id:
+                    raise ValueError("No Google Drive folder configured for upload")
+                credentials_path = cfg.get("gdrive_credentials_path", "").strip() or None
                 push(f"📁 Drive folder ID: {folder_id}", "info")
                 link = upload_gdrive(out, folder_id, push, credentials_path=credentials_path)
-                push(f"▶ Updating Lark field '{fm.get('link')}' with Drive link...", "info")
-                lark_update({"link": link})
+                push(f"▶ Updating Lark field '{fm.get('link_completed')}' with Drive link...", "info")
+                lark_update({"link_completed": link})
                 result = {"status": "success", "link": link}
 
             lark_update({"status": "Hoàn thành ✓"})

@@ -8,9 +8,18 @@ class ApiService {
   static String host = '127.0.0.1';
   static int port = 8000;
 
+  // ⚠️ Cập nhật URL backend từ Render tại đây (sau khi deploy)
+  // Ví dụ: https://reup-backend.onrender.com
+  static String backendUrl = ''; // Để trống = same-origin (localhost:8000)
+
   static String get baseUrl {
     if (kIsWeb) {
-      return '';
+      // Nếu có backendUrl, dùng nó. Nếu không, dùng same-origin
+      if (backendUrl.isNotEmpty) {
+        return backendUrl;
+      }
+      // Same-origin (localhost:8000 hoặc domain.com:8000)
+      return 'http://${Uri.base.host}:8000';
     }
     return 'http://$host:$port';
   }
@@ -18,6 +27,12 @@ class ApiService {
   static String get wsBaseUrl {
     if (kIsWeb) {
       final scheme = Uri.base.scheme == 'https' ? 'wss' : 'ws';
+      if (backendUrl.isNotEmpty) {
+        // Chuyển https:// → wss://, http:// → ws://
+        final wsUrl = backendUrl.replaceFirst('https://', 'wss://')
+                                .replaceFirst('http://', 'ws://');
+        return wsUrl;
+      }
       return '$scheme://${Uri.base.authority}';
     }
     return 'ws://$host:$port';
@@ -83,7 +98,8 @@ class ApiService {
   }
 
   Future<List<Map<String, dynamic>>> gdriveList(String folderId) async {
-    final uri = Uri.parse('${ApiService.baseUrl}/gdrive/list${folderId.isNotEmpty ? '?folder_id=${Uri.encodeComponent(folderId)}' : ''}');
+    final uri = Uri.parse(
+        '${ApiService.baseUrl}/gdrive/list${folderId.isNotEmpty ? '?folder_id=${Uri.encodeComponent(folderId)}' : ''}');
     final res = await http.get(uri).timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -94,7 +110,8 @@ class ApiService {
     return items;
   }
 
-  Future<Map<String, dynamic>> gdriveUpload(PlatformFile file, String folderId) async {
+  Future<Map<String, dynamic>> gdriveUpload(
+      PlatformFile file, String folderId) async {
     final uri = Uri.parse('${ApiService.baseUrl}/gdrive/upload');
     final req = http.MultipartRequest('POST', uri);
     if (folderId.isNotEmpty) req.fields['folder_id'] = folderId;
@@ -103,7 +120,8 @@ class ApiService {
       final multipart = await http.MultipartFile.fromPath('file', file.path!);
       req.files.add(multipart);
     } else if (file.bytes != null) {
-      final multipart = http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name);
+      final multipart = http.MultipartFile.fromBytes('file', file.bytes!,
+          filename: file.name);
       req.files.add(multipart);
     } else {
       throw Exception('No file bytes or path available');

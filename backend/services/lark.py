@@ -155,10 +155,15 @@ async def create_lark_records(
         records_payload = []
         for item in items:
             fields: dict = {}
-            if fm["link"]   in available:
-                fields[fm["link"]]   = item["url"]
-            if fm["music"]  in available:
-                fields[fm["music"]]  = item["use_music"]
+            # For URL-type fields, Lark expects an object like {"link": url, "text": url}
+            if fm["link"] in available:
+                url_val = item.get("url")
+                if isinstance(url_val, str) and url_val.startswith("http"):
+                    fields[fm["link"]] = {"link": url_val, "text": url_val}
+                else:
+                    fields[fm["link"]] = url_val
+            if fm["music"] in available:
+                fields[fm["music"]] = item.get("use_music")
             if fm["status"] in available:
                 fields[fm["status"]] = "Chờ xử lý"
             records_payload.append({"fields": fields})

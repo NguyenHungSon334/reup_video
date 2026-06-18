@@ -20,26 +20,27 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _hostCtrl             = TextEditingController(text: ApiService.host);
-  final _portCtrl             = TextEditingController(text: ApiService.port.toString());
-  final _gdriveCtrl           = TextEditingController();
-  final _gdriveCredCtrl       = TextEditingController();
-  final _localPathCtrl        = TextEditingController();
-  final _musicFolderCtrl      = TextEditingController();
-  final _musicDriveCtrl       = TextEditingController();
-  final _logoPathCtrl         = TextEditingController();
-  final _logoDriveCtrl        = TextEditingController();
-  final _appIdCtrl            = TextEditingController();
-  final _appSecretCtrl        = TextEditingController();
-  final _cookiesBrowserCtrl   = TextEditingController();
-  final _cookiesFileCtrl      = TextEditingController();
+  final _hostCtrl = TextEditingController(text: ApiService.host);
+  final _portCtrl = TextEditingController(text: ApiService.port.toString());
+  final _gdriveCtrl = TextEditingController();
+  final _reupDriveCtrl = TextEditingController();
+  final _gdriveCredCtrl = TextEditingController();
+  final _localPathCtrl = TextEditingController();
+  final _musicFolderCtrl = TextEditingController();
+  final _musicDriveCtrl = TextEditingController();
+  final _logoPathCtrl = TextEditingController();
+  final _logoDriveCtrl = TextEditingController();
+  final _appIdCtrl = TextEditingController();
+  final _appSecretCtrl = TextEditingController();
+  final _cookiesBrowserCtrl = TextEditingController();
+  final _cookiesFileCtrl = TextEditingController();
 
-  int    _destTab      = 0;
-  int    _logoScale    = 150;
+  int _destTab = 0;
+  int _logoScale = 150;
   String _logoPosition = 'top_left';
-  double _logoOpacity  = 1.0;
+  double _logoOpacity = 1.0;
   bool _obscureSecret = true;
-  bool _saving     = false;
+  bool _saving = false;
   String? _message;
   bool _msgIsError = false;
 
@@ -54,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _hostCtrl.dispose();
     _portCtrl.dispose();
     _gdriveCtrl.dispose();
+    _reupDriveCtrl.dispose();
     _gdriveCredCtrl.dispose();
     _localPathCtrl.dispose();
     _musicFolderCtrl.dispose();
@@ -72,21 +74,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final cfg = await widget.api.getConfig();
       if (!mounted) return;
       setState(() {
-        _gdriveCtrl.text       = cfg['gdrive_folder_id']       as String? ?? '';
-        _gdriveCredCtrl.text   = cfg['gdrive_credentials_path'] as String? ?? '';
-        _localPathCtrl.text    = cfg['local_folder']            as String? ?? '';
-        _musicFolderCtrl.text  = cfg['music_folder']     as String? ?? '';
-        _musicDriveCtrl.text   = cfg['music_gdrive_folder_id'] as String? ?? '';
-        _logoPathCtrl.text     = cfg['logo_path']        as String? ?? '';
-        _logoDriveCtrl.text    = cfg['logo_gdrive_folder_id'] as String? ?? '';
-        _appIdCtrl.text          = cfg['lark_app_id']       as String? ?? '';
-        _appSecretCtrl.text      = cfg['lark_app_secret']   as String? ?? '';
-        _cookiesBrowserCtrl.text = cfg['cookies_browser']   as String? ?? '';
-        _cookiesFileCtrl.text    = cfg['cookies_file']      as String? ?? '';
-        _destTab      = (cfg['save_to'] as String? ?? 'drive') == 'local' ? 1 : 0;
-        _logoScale    = (cfg['logo_scale'] as num?)?.toInt() ?? 150;
+        _gdriveCtrl.text = cfg['gdrive_folder_id'] as String? ?? '';
+        _reupDriveCtrl.text = cfg['reup_gdrive_folder_id'] as String? ?? '';
+        _gdriveCredCtrl.text = cfg['gdrive_credentials_path'] as String? ?? '';
+        _localPathCtrl.text = cfg['local_folder'] as String? ?? '';
+        _musicFolderCtrl.text = cfg['music_folder'] as String? ?? '';
+        _musicDriveCtrl.text = cfg['music_gdrive_folder_id'] as String? ?? '';
+        _logoPathCtrl.text = cfg['logo_path'] as String? ?? '';
+        _logoDriveCtrl.text = cfg['logo_gdrive_folder_id'] as String? ?? '';
+        _appIdCtrl.text = cfg['lark_app_id'] as String? ?? '';
+        _appSecretCtrl.text = cfg['lark_app_secret'] as String? ?? '';
+        _cookiesBrowserCtrl.text = cfg['cookies_browser'] as String? ?? '';
+        _cookiesFileCtrl.text = cfg['cookies_file'] as String? ?? '';
+        _destTab = (cfg['save_to'] as String? ?? 'drive') == 'local' ? 1 : 0;
+        _logoScale = (cfg['logo_scale'] as num?)?.toInt() ?? 150;
         _logoPosition = cfg['logo_position'] as String? ?? 'top_left';
-        _logoOpacity  = (cfg['logo_opacity'] as num?)?.toDouble() ?? 1.0;
+        _logoOpacity = (cfg['logo_opacity'] as num?)?.toDouble() ?? 1.0;
       });
     } on Exception {
       _showMsg('Không kết nối được backend', isError: true);
@@ -95,7 +98,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _showMsg(String msg, {bool isError = false}) {
     if (!mounted) return;
-    setState(() { _message = msg; _msgIsError = isError; });
+    setState(() {
+      _message = msg;
+      _msgIsError = isError;
+    });
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) setState(() => _message = null);
     });
@@ -105,27 +111,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _saving = true);
     try {
       // Save backend host/port to local storage
-      final host = _hostCtrl.text.trim().isEmpty ? '127.0.0.1' : _hostCtrl.text.trim();
+      final host =
+          _hostCtrl.text.trim().isEmpty ? '127.0.0.1' : _hostCtrl.text.trim();
       final port = int.tryParse(_portCtrl.text.trim()) ?? 8000;
       await widget.onBackendChanged(host, port);
 
       // Save other settings to backend config
       await widget.api.saveConfig({
-        'save_to':                   _destTab == 0 ? 'drive' : 'local',
-        'gdrive_folder_id':          _gdriveCtrl.text.trim(),
-        'gdrive_credentials_path':   _gdriveCredCtrl.text.trim(),
-        'local_folder':              _localPathCtrl.text.trim(),
-        'music_folder':              _musicFolderCtrl.text.trim(),
-        'music_gdrive_folder_id':    _musicDriveCtrl.text.trim(),
-        'logo_path':                 _logoPathCtrl.text.trim(),
-        'logo_gdrive_folder_id':     _logoDriveCtrl.text.trim(),
-        'logo_scale':       _logoScale,
-        'logo_position':    _logoPosition,
-        'logo_opacity':     _logoOpacity,
-        'lark_app_id':       _appIdCtrl.text.trim(),
-        'lark_app_secret':   _appSecretCtrl.text.trim(),
-        'cookies_browser':   _cookiesBrowserCtrl.text.trim(),
-        'cookies_file':      _cookiesFileCtrl.text.trim(),
+        'save_to': _destTab == 0 ? 'drive' : 'local',
+        'gdrive_folder_id': _gdriveCtrl.text.trim(),
+        'reup_gdrive_folder_id': _reupDriveCtrl.text.trim(),
+        'gdrive_credentials_path': _gdriveCredCtrl.text.trim(),
+        'local_folder': _localPathCtrl.text.trim(),
+        'music_folder': _musicFolderCtrl.text.trim(),
+        'music_gdrive_folder_id': _musicDriveCtrl.text.trim(),
+        'logo_path': _logoPathCtrl.text.trim(),
+        'logo_gdrive_folder_id': _logoDriveCtrl.text.trim(),
+        'logo_scale': _logoScale,
+        'logo_position': _logoPosition,
+        'logo_opacity': _logoOpacity,
+        'lark_app_id': _appIdCtrl.text.trim(),
+        'lark_app_secret': _appSecretCtrl.text.trim(),
+        'cookies_browser': _cookiesBrowserCtrl.text.trim(),
+        'cookies_file': _cookiesFileCtrl.text.trim(),
       });
       _showMsg('✓ Đã lưu cài đặt');
     } on Exception catch (e) {
@@ -156,12 +164,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   opacity: 1,
                   duration: const Duration(milliseconds: 200),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                     decoration: BoxDecoration(
-                      color: (_msgIsError ? kRed : kGreen).withOpacity(0.12),
+                      color:
+                          (_msgIsError ? kRed : kGreen).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(5),
                       border: Border.all(
-                        color: (_msgIsError ? kRed : kGreen).withOpacity(0.35),
+                        color: (_msgIsError ? kRed : kGreen)
+                            .withValues(alpha: 0.35),
                       ),
                     ),
                     child: Text(
@@ -182,11 +193,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             strokeWidth: 1.5, color: Colors.white))
                     : const Icon(Icons.save_rounded, size: 15),
                 label: const Text('Lưu cài đặt',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kAccent,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(5)),
                   elevation: 0,
@@ -206,40 +219,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _BackendSection(hostCtrl: _hostCtrl, portCtrl: _portCtrl),
                 const SizedBox(height: 16),
                 _OutputSection(
-                  destTab:        _destTab,
-                  onTab:          (t) => setState(() => _destTab = t),
-                  gdriveCtrl:     _gdriveCtrl,
+                  destTab: _destTab,
+                  onTab: (t) => setState(() => _destTab = t),
+                  gdriveCtrl: _gdriveCtrl,
+                  reupDriveCtrl: _reupDriveCtrl,
                   gdriveCredCtrl: _gdriveCredCtrl,
-                  localCtrl:      _localPathCtrl,
-                  api:            widget.api,
+                  localCtrl: _localPathCtrl,
+                  api: widget.api,
                 ),
                 const SizedBox(height: 16),
                 _MediaSection(
-                  musicFolderCtrl:   _musicFolderCtrl,
-                  musicDriveCtrl:    _musicDriveCtrl,
-                  logoPathCtrl:      _logoPathCtrl,
-                  logoDriveCtrl:     _logoDriveCtrl,
-                  api:               widget.api,
-                  logoScale:         _logoScale,
-                  logoPosition:      _logoPosition,
-                  logoOpacity:       _logoOpacity,
-                  onScaleChanged:    (v) => setState(() => _logoScale = v),
+                  musicFolderCtrl: _musicFolderCtrl,
+                  musicDriveCtrl: _musicDriveCtrl,
+                  logoPathCtrl: _logoPathCtrl,
+                  logoDriveCtrl: _logoDriveCtrl,
+                  api: widget.api,
+                  logoScale: _logoScale,
+                  logoPosition: _logoPosition,
+                  logoOpacity: _logoOpacity,
+                  onScaleChanged: (v) => setState(() => _logoScale = v),
                   onPositionChanged: (v) => setState(() => _logoPosition = v),
-                  onOpacityChanged:  (v) => setState(() => _logoOpacity = v),
+                  onOpacityChanged: (v) => setState(() => _logoOpacity = v),
                 ),
                 const SizedBox(height: 16),
                 _LarkSection(
-                  appIdCtrl:     _appIdCtrl,
+                  appIdCtrl: _appIdCtrl,
                   appSecretCtrl: _appSecretCtrl,
                   obscureSecret: _obscureSecret,
                   onToggleObscure: () =>
                       setState(() => _obscureSecret = !_obscureSecret),
                 ),
                 const SizedBox(height: 16),
-                _DownloadSection(
-                  cookiesBrowserCtrl: _cookiesBrowserCtrl,
-                  cookiesFileCtrl:    _cookiesFileCtrl,
-                ),
               ],
             ),
           ),
@@ -263,56 +273,42 @@ class _BackendSection extends StatelessWidget {
       actionWidget: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-          color: kGreen.withOpacity(0.12),
+          color: kGreen.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(3),
-          border: Border.all(color: kGreen.withOpacity(0.3)),
+          border: Border.all(color: kGreen.withValues(alpha: 0.3)),
         ),
         child: const Text('LOCAL',
             style: TextStyle(
-                color: kGreen, fontSize: 9,
-                fontWeight: FontWeight.w700, letterSpacing: 0.6)),
+                color: kGreen,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('IP / Host Backend',
               style: TextStyle(
-                  color: kMuted, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
           const SizedBox(height: 6),
           DarkInput(ctrl: hostCtrl, hint: '127.0.0.1'),
           const SizedBox(height: 12),
           const Text('Cổng',
               style: TextStyle(
-                  color: kMuted, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
           const SizedBox(height: 6),
           SizedBox(
             width: 120,
             child: DarkInput(ctrl: portCtrl, hint: '8000'),
           ),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: kInputBg,
-              borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: kBorder),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline_rounded, size: 14, color: kTextDim),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Chạy file start_backend.bat để khởi động server backend. '
-                    'Mặc định: 127.0.0.1:8000',
-                    style: const TextStyle(color: kTextDim, fontSize: 11),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Backend startup instructions removed (local setup information)
         ],
       ),
     );
@@ -325,6 +321,7 @@ class _OutputSection extends StatefulWidget {
   final int destTab;
   final ValueChanged<int> onTab;
   final TextEditingController gdriveCtrl;
+  final TextEditingController reupDriveCtrl;
   final TextEditingController gdriveCredCtrl;
   final TextEditingController localCtrl;
   final ApiService api;
@@ -332,6 +329,7 @@ class _OutputSection extends StatefulWidget {
     required this.destTab,
     required this.onTab,
     required this.gdriveCtrl,
+    required this.reupDriveCtrl,
     required this.gdriveCredCtrl,
     required this.localCtrl,
     required this.api,
@@ -342,10 +340,10 @@ class _OutputSection extends StatefulWidget {
 }
 
 class _OutputSectionState extends State<_OutputSection> {
-  bool?   _connected;   // null = unknown, true = ok, false = not connected
-  String  _statusMsg = '';
-  bool    _checking  = false;
-  bool    _connecting = false;
+  bool? _connected; // null = unknown, true = ok, false = not connected
+  String _statusMsg = '';
+  bool _checking = false;
+  bool _connecting = false;
 
   @override
   void initState() {
@@ -354,36 +352,47 @@ class _OutputSectionState extends State<_OutputSection> {
   }
 
   Future<void> _checkStatus() async {
-    setState(() { _checking = true; _statusMsg = ''; });
+    setState(() {
+      _checking = true;
+      _statusMsg = '';
+    });
     try {
       final res = await widget.api.gdriveStatus();
       if (!mounted) return;
       setState(() {
         _connected = res['connected'] as bool? ?? false;
-        _statusMsg = _connected! ? '' : (res['reason'] as String? ?? 'Chưa kết nối');
-        _checking  = false;
+        _statusMsg =
+            _connected! ? '' : (res['reason'] as String? ?? 'Chưa kết nối');
+        _checking = false;
       });
     } on Exception catch (e) {
       if (!mounted) return;
       setState(() {
         _connected = false;
         _statusMsg = 'Không thể kết nối backend: $e';
-        _checking  = false;
+        _checking = false;
       });
     }
   }
 
   Future<void> _connect() async {
-    setState(() { _connecting = true; _statusMsg = 'Đang mở trình duyệt để xác thực...'; });
+    setState(() {
+      _connecting = true;
+      _statusMsg = 'Đang mở trình duyệt để xác thực...';
+    });
     try {
       await widget.api.gdriveConnect();
       if (!mounted) return;
-      setState(() { _connected = true; _statusMsg = ''; _connecting = false; });
+      setState(() {
+        _connected = true;
+        _statusMsg = '';
+        _connecting = false;
+      });
     } on Exception catch (e) {
       if (!mounted) return;
       setState(() {
-        _connected  = false;
-        _statusMsg  = e.toString().replaceFirst('Exception: ', '');
+        _connected = false;
+        _statusMsg = e.toString().replaceFirst('Exception: ', '');
         _connecting = false;
       });
     }
@@ -405,8 +414,14 @@ class _OutputSectionState extends State<_OutputSection> {
             ),
             child: Row(
               children: [
-                DestTab(label: 'Google Drive', active: widget.destTab == 0, onTap: () => widget.onTab(0)),
-                DestTab(label: 'Thư mục cục bộ', active: widget.destTab == 1, onTap: () => widget.onTab(1)),
+                DestTab(
+                    label: 'Google Drive',
+                    active: widget.destTab == 0,
+                    onTap: () => widget.onTab(0)),
+                DestTab(
+                    label: 'Thư mục cục bộ',
+                    active: widget.destTab == 1,
+                    onTap: () => widget.onTab(1)),
               ],
             ),
           ),
@@ -417,10 +432,13 @@ class _OutputSectionState extends State<_OutputSection> {
               children: [
                 _checking
                     ? const SizedBox(
-                        width: 10, height: 10,
-                        child: CircularProgressIndicator(strokeWidth: 1.5, color: kMuted))
+                        width: 10,
+                        height: 10,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 1.5, color: kMuted))
                     : Container(
-                        width: 8, height: 8,
+                        width: 8,
+                        height: 8,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: _connected == null
@@ -454,8 +472,10 @@ class _OutputSectionState extends State<_OutputSection> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: kTextDim,
                     side: const BorderSide(color: kBorder),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5)),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
@@ -465,16 +485,20 @@ class _OutputSectionState extends State<_OutputSection> {
                   onPressed: (_connecting || _checking) ? null : _connect,
                   icon: _connecting
                       ? const SizedBox(
-                          width: 11, height: 11,
-                          child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white))
+                          width: 11,
+                          height: 11,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 1.5, color: Colors.white))
                       : const Icon(Icons.link_rounded, size: 13),
                   label: Text(_connecting ? 'Đang kết nối...' : 'Kết nối',
                       style: const TextStyle(fontSize: 11)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kAccent,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5)),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     elevation: 0,
@@ -485,20 +509,37 @@ class _OutputSectionState extends State<_OutputSection> {
             const SizedBox(height: 14),
             const Text('ID Thư mục Google Drive',
                 style: TextStyle(
-                    color: kMuted, fontSize: 10,
-                    fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+                    color: kMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.9)),
             const SizedBox(height: 6),
-            DarkInput(ctrl: widget.gdriveCtrl, hint: '1ABC_folder_id_xyz  (để trống = Thư mục gốc Drive)'),
+            DarkInput(
+                ctrl: widget.gdriveCtrl,
+                hint: '1ABC_folder_id_xyz  (để trống = Thư mục gốc Drive)'),
+            const SizedBox(height: 14),
+            const Text('ID Thư mục tải video Reup',
+                style: TextStyle(
+                    color: kMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.9)),
+            const SizedBox(height: 6),
+            DarkInput(
+                ctrl: widget.reupDriveCtrl,
+                hint: '1Oi3Rx1_nMfOIMh-L8iiJ1Z2d34YKJMxy'),
             const SizedBox(height: 8),
             const Text(
-              'Mẹo: Mở thư mục trên Google Drive, sao chép ID từ URL sau phần /folders/',
+              'Để trống để dùng thư mục mặc định hoặc cấu hình backend.',
               style: TextStyle(color: kMuted, fontSize: 10.5),
             ),
             const SizedBox(height: 14),
             const Text('Đường dẫn file credentials.json',
                 style: TextStyle(
-                    color: kMuted, fontSize: 10,
-                    fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+                    color: kMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.9)),
             const SizedBox(height: 4),
             const Text(
               'File OAuth2 — Google Cloud Console → APIs & Services → Credentials → '
@@ -508,7 +549,10 @@ class _OutputSectionState extends State<_OutputSection> {
             const SizedBox(height: 6),
             Row(
               children: [
-                Expanded(child: DarkInput(ctrl: widget.gdriveCredCtrl, hint: 'C:\\path\\to\\credentials.json')),
+                Expanded(
+                    child: DarkInput(
+                        ctrl: widget.gdriveCredCtrl,
+                        hint: 'C:\\path\\to\\credentials.json')),
                 const SizedBox(width: 8),
                 OutlinedButton(
                   onPressed: () async {
@@ -523,8 +567,10 @@ class _OutputSectionState extends State<_OutputSection> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: kTextDim,
                     side: const BorderSide(color: kBorder),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5)),
                   ),
                   child: const Text('Chọn', style: TextStyle(fontSize: 12)),
                 ),
@@ -533,12 +579,16 @@ class _OutputSectionState extends State<_OutputSection> {
           ] else ...[
             const Text('Thư mục lưu kết quả',
                 style: TextStyle(
-                    color: kMuted, fontSize: 10,
-                    fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+                    color: kMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.9)),
             const SizedBox(height: 6),
             Row(
               children: [
-                Expanded(child: DarkInput(ctrl: widget.localCtrl, hint: 'C:\\Videos\\output')),
+                Expanded(
+                    child: DarkInput(
+                        ctrl: widget.localCtrl, hint: 'C:\\Videos\\output')),
                 const SizedBox(width: 8),
                 OutlinedButton(
                   onPressed: () async {
@@ -548,7 +598,8 @@ class _OutputSectionState extends State<_OutputSection> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: kTextDim,
                     side: const BorderSide(color: kBorder),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(5)),
                   ),
@@ -566,10 +617,10 @@ class _OutputSectionState extends State<_OutputSection> {
 // ── Media section ─────────────────────────────────────────────────────────────
 
 const _kPositions = {
-  'top_left':     'Trên trái',
-  'top_right':    'Trên phải',
-  'center':       'Giữa',
-  'bottom_left':  'Dưới trái',
+  'top_left': 'Trên trái',
+  'top_right': 'Trên phải',
+  'center': 'Giữa',
+  'bottom_left': 'Dưới trái',
   'bottom_right': 'Dưới phải',
 };
 
@@ -579,10 +630,10 @@ class _MediaSection extends StatelessWidget {
   final TextEditingController logoPathCtrl;
   final TextEditingController logoDriveCtrl;
   final ApiService api;
-  final int    logoScale;
+  final int logoScale;
   final String logoPosition;
   final double logoOpacity;
-  final ValueChanged<int>    onScaleChanged;
+  final ValueChanged<int> onScaleChanged;
   final ValueChanged<String> onPositionChanged;
   final ValueChanged<double> onOpacityChanged;
 
@@ -600,7 +651,8 @@ class _MediaSection extends StatelessWidget {
     required this.onOpacityChanged,
   });
 
-  Future<void> _showFilesList(BuildContext context, String folderId, {bool isLogo = false}) async {
+  Future<void> _showFilesList(BuildContext context, String folderId,
+      {bool isLogo = false}) async {
     try {
       final items = await api.gdriveList(folderId);
       if (!context.mounted) return;
@@ -608,7 +660,8 @@ class _MediaSection extends StatelessWidget {
         context: context,
         builder: (ctx) {
           return AlertDialog(
-            title: Text('Files in $folderId', style: const TextStyle(fontSize: 14)),
+            title: Text('Files in $folderId',
+                style: const TextStyle(fontSize: 14)),
             content: SizedBox(
               width: double.maxFinite,
               child: ListView(
@@ -618,13 +671,16 @@ class _MediaSection extends StatelessWidget {
                   final link = f['webViewLink'] as String? ?? '';
                   return ListTile(
                     title: Text(name),
-                    subtitle: Text(f['mimeType'] as String? ?? '', style: const TextStyle(fontSize: 12)),
+                    subtitle: Text(f['mimeType'] as String? ?? '',
+                        style: const TextStyle(fontSize: 12)),
                     trailing: Wrap(spacing: 8, children: [
                       TextButton(
-                        child: const Text('Copy link', style: TextStyle(fontSize: 12)),
+                        child: const Text('Copy link',
+                            style: TextStyle(fontSize: 12)),
                         onPressed: () {
                           Navigator.of(ctx).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied link for $name')));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Copied link for $name')));
                           if (isLogo) {
                             logoPathCtrl.text = link;
                           }
@@ -636,13 +692,17 @@ class _MediaSection extends StatelessWidget {
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Đóng')),
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Đóng')),
             ],
           );
         },
       );
     } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (context.mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -650,76 +710,104 @@ class _MediaSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return PanelCard(
       title: 'CÀI ĐẶT MEDIA',
-      actionWidget: const Icon(Icons.perm_media_outlined, size: 14, color: kMuted),
+      actionWidget:
+          const Icon(Icons.perm_media_outlined, size: 14, color: kMuted),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── Logo path ────────────────────────────────────────────────────────
           const Text(
             'Watermark Logo',
-            style: TextStyle(color: kMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.9),
+            style: TextStyle(
+                color: kMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.9),
           ),
           const SizedBox(height: 4),
-          const Text('Định dạng PNG hoặc WEBP.', style: TextStyle(color: kTextDim, fontSize: 10.5)),
+          const Text('Định dạng PNG hoặc WEBP.',
+              style: TextStyle(color: kTextDim, fontSize: 10.5)),
           const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(child: DarkInput(ctrl: logoPathCtrl, hint: 'C:\\Images\\logo.png')),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: () async {
-                  final res = await FilePicker.platform.pickFiles(
-                    type: FileType.custom,
-                    allowedExtensions: ['png', 'webp', 'jpg', 'jpeg'],
-                  );
-                  if (res?.files.single.path != null) {
-                    logoPathCtrl.text = res!.files.single.path!;
-                  }
-                },
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: kTextDim,
-                  side: const BorderSide(color: kBorder),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-                ),
-                child: const Text('Chọn', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
 
           const SizedBox(height: 8),
-          const Text('Drive Logo Folder ID', style: TextStyle(color: kMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+          const Text('Drive Logo Folder ID',
+              style: TextStyle(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
           const SizedBox(height: 6),
           Row(
             children: [
-              Expanded(child: DarkInput(ctrl: logoDriveCtrl, hint: 'Drive folder ID for logos')),
+              Expanded(
+                  child: DarkInput(
+                      ctrl: logoDriveCtrl, hint: 'Drive folder ID for logos')),
               const SizedBox(width: 8),
-              OutlinedButton(
+              ElevatedButton(
                 onPressed: () async {
                   final id = logoDriveCtrl.text.trim();
-                  if (id.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter folder ID'))); return; }
+                  if (id.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Please enter folder ID')));
+                    return;
+                  }
                   await _showFilesList(context, id, isLogo: true);
                 },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kAccent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
+                  elevation: 0,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: const Text('List', style: TextStyle(fontSize: 12)),
               ),
               const SizedBox(width: 8),
-              OutlinedButton(
+              ElevatedButton(
                 onPressed: () async {
                   final id = logoDriveCtrl.text.trim();
-                  if (id.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter folder ID'))); return; }
-                  final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['png','webp','jpg','jpeg']);
+                  if (id.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Enter folder ID')));
+                    return;
+                  }
+                  final res = await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: ['png', 'webp', 'jpg', 'jpeg']);
                   if (res?.files.single != null) {
                     final file = res!.files.single;
                     try {
                       final body = await api.gdriveUpload(file, id);
-                      final link = (body['link'] ?? body['meta']?['webViewLink'])?.toString() ?? '';
+                      final link =
+                          (body['link'] ?? body['meta']?['webViewLink'])
+                                  ?.toString() ??
+                              '';
                       if (link.isNotEmpty) logoPathCtrl.text = link;
-                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploaded: ${file.name}')));
+                      if (context.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Uploaded: ${file.name}')));
                     } catch (e) {
-                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload error: $e')));
+                      if (context.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Upload error: $e')));
                     }
                   }
                 },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kAccent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
+                  elevation: 0,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: const Text('Upload', style: TextStyle(fontSize: 12)),
               ),
             ],
@@ -732,17 +820,24 @@ class _MediaSection extends StatelessWidget {
             children: [
               const Text(
                 'Kích thước Logo (chiều rộng px)',
-                style: TextStyle(color: kMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.9),
+                style: TextStyle(
+                    color: kMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.9),
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                 decoration: BoxDecoration(
                   color: kInputBg,
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: kBorder),
                 ),
-                child: Text('${logoScale}px', style: const TextStyle(color: kText, fontSize: 12, fontFamily: 'monospace')),
+                child: Text('${logoScale}px',
+                    style: const TextStyle(
+                        color: kText, fontSize: 12, fontFamily: 'monospace')),
               ),
             ],
           ),
@@ -752,7 +847,7 @@ class _MediaSection extends StatelessWidget {
               activeTrackColor: kAccent,
               inactiveTrackColor: kBorder,
               thumbColor: kAccent,
-              overlayColor: kAccent.withOpacity(0.1),
+              overlayColor: kAccent.withValues(alpha: 0.1),
               trackHeight: 3,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
             ),
@@ -769,7 +864,11 @@ class _MediaSection extends StatelessWidget {
           // ── Logo position ────────────────────────────────────────────────────
           const Text(
             'Vị trí Logo',
-            style: TextStyle(color: kMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.9),
+            style: TextStyle(
+                color: kMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.9),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -780,12 +879,15 @@ class _MediaSection extends StatelessWidget {
               return GestureDetector(
                 onTap: () => onPositionChanged(e.key),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
-                    color: selected ? kAccent.withOpacity(0.15) : kInputBg,
+                    color:
+                        selected ? kAccent.withValues(alpha: 0.15) : kInputBg,
                     borderRadius: BorderRadius.circular(5),
                     border: Border.all(
-                      color: selected ? kAccent.withOpacity(0.6) : kBorder,
+                      color:
+                          selected ? kAccent.withValues(alpha: 0.6) : kBorder,
                     ),
                   ),
                   child: Text(
@@ -793,7 +895,8 @@ class _MediaSection extends StatelessWidget {
                     style: TextStyle(
                       color: selected ? kAccent : kTextDim,
                       fontSize: 11,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight:
+                          selected ? FontWeight.w600 : FontWeight.normal,
                     ),
                   ),
                 ),
@@ -808,11 +911,16 @@ class _MediaSection extends StatelessWidget {
             children: [
               const Text(
                 'Độ mờ Logo',
-                style: TextStyle(color: kMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.9),
+                style: TextStyle(
+                    color: kMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.9),
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                 decoration: BoxDecoration(
                   color: kInputBg,
                   borderRadius: BorderRadius.circular(4),
@@ -820,7 +928,8 @@ class _MediaSection extends StatelessWidget {
                 ),
                 child: Text(
                   '${(logoOpacity * 100).round()}%',
-                  style: const TextStyle(color: kText, fontSize: 12, fontFamily: 'monospace'),
+                  style: const TextStyle(
+                      color: kText, fontSize: 12, fontFamily: 'monospace'),
                 ),
               ),
             ],
@@ -831,7 +940,7 @@ class _MediaSection extends StatelessWidget {
               activeTrackColor: kAccent,
               inactiveTrackColor: kBorder,
               thumbColor: kAccent,
-              overlayColor: kAccent.withOpacity(0.1),
+              overlayColor: kAccent.withValues(alpha: 0.1),
               trackHeight: 3,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
             ),
@@ -852,7 +961,11 @@ class _MediaSection extends StatelessWidget {
           // ── Music folder ──────────────────────────────────────────────────
           const Text(
             'Thư mục nhạc nền',
-            style: TextStyle(color: kMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.9),
+            style: TextStyle(
+                color: kMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.9),
           ),
           const SizedBox(height: 4),
           const Text(
@@ -860,61 +973,94 @@ class _MediaSection extends StatelessWidget {
             style: TextStyle(color: kTextDim, fontSize: 10.5),
           ),
           const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(child: DarkInput(ctrl: musicFolderCtrl, hint: 'C:\\Music\\BGM')),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: () async {
-                  final path = await FilePicker.platform.getDirectoryPath();
-                  if (path != null) musicFolderCtrl.text = path;
-                },
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: kTextDim,
-                  side: const BorderSide(color: kBorder),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-                ),
-                child: const Text('Chọn', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
 
           const SizedBox(height: 8),
-          const Text('Drive Music Folder ID', style: TextStyle(color: kMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+          const Text('Drive Music Folder ID',
+              style: TextStyle(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
           const SizedBox(height: 6),
           Row(
             children: [
-              Expanded(child: DarkInput(ctrl: musicDriveCtrl, hint: 'Drive folder ID for music')),
+              Expanded(
+                  child: DarkInput(
+                      ctrl: musicDriveCtrl, hint: 'Drive folder ID for music')),
               const SizedBox(width: 8),
-              OutlinedButton(
+              ElevatedButton(
                 onPressed: () async {
                   final id = musicDriveCtrl.text.trim();
-                  if (id.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter folder ID'))); return; }
+                  if (id.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Please enter folder ID')));
+                    return;
+                  }
                   try {
                     await _showFilesList(context, id, isLogo: false);
                   } catch (e) {
-                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                    if (context.mounted)
+                      ScaffoldMessenger.of(context)
+                          .showSnackBar(SnackBar(content: Text('Error: $e')));
                   }
                 },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kAccent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
+                  elevation: 0,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: const Text('List', style: TextStyle(fontSize: 12)),
               ),
               const SizedBox(width: 8),
-              OutlinedButton(
+              ElevatedButton(
                 onPressed: () async {
                   final id = musicDriveCtrl.text.trim();
-                  if (id.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter folder ID'))); return; }
-                  final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['mp3','aac','wav','ogg','m4a','flac']);
+                  if (id.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Enter folder ID')));
+                    return;
+                  }
+                  final res = await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: [
+                        'mp3',
+                        'aac',
+                        'wav',
+                        'ogg',
+                        'm4a',
+                        'flac'
+                      ]);
                   if (res?.files.single != null) {
                     final file = res!.files.single;
                     try {
-                      final body = await api.gdriveUpload(file, id);
-                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploaded: ${file.name}')));
+                      await api.gdriveUpload(file, id);
+                      if (context.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Uploaded: ${file.name}')));
                     } catch (e) {
-                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload error: $e')));
+                      if (context.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Upload error: $e')));
                     }
                   }
                 },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kAccent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
+                  elevation: 0,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: const Text('Upload', style: TextStyle(fontSize: 12)),
               ),
             ],
@@ -944,7 +1090,8 @@ class _LarkSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return PanelCard(
       title: 'LARK DATABASE',
-      actionWidget: const Icon(Icons.open_in_new_rounded, size: 14, color: kMuted),
+      actionWidget:
+          const Icon(Icons.open_in_new_rounded, size: 14, color: kMuted),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -952,24 +1099,28 @@ class _LarkSection extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: kAccent.withOpacity(0.06),
+              color: kAccent.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: kAccent.withOpacity(0.2)),
+              border: Border.all(color: kAccent.withValues(alpha: 0.2)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Base đang kết nối',
                     style: TextStyle(
-                        color: kMuted, fontSize: 9,
-                        fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+                        color: kMuted,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8)),
                 const SizedBox(height: 4),
                 const Text('langmodadh.sg.larksuite.com',
-                    style: TextStyle(color: kAccent, fontSize: 11, fontFamily: 'monospace')),
+                    style: TextStyle(
+                        color: kAccent, fontSize: 11, fontFamily: 'monospace')),
                 const SizedBox(height: 6),
-                _InfoRow(label: 'Base ID',  value: 'DLJfboBx0aKN5lsLV9tlGVVOgrd'),
+                _InfoRow(
+                    label: 'Base ID', value: 'DLJfboBx0aKN5lsLV9tlGVVOgrd'),
                 _InfoRow(label: 'Table ID', value: 'tblpyV8NmdLgNdnd'),
-                _InfoRow(label: 'View ID',  value: 'vewiEHKUSp'),
+                _InfoRow(label: 'View ID', value: 'vewiEHKUSp'),
               ],
             ),
           ),
@@ -977,18 +1128,25 @@ class _LarkSection extends StatelessWidget {
 
           const Text('App ID',
               style: TextStyle(
-                  color: kMuted, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
           const SizedBox(height: 6),
           DarkInput(ctrl: appIdCtrl, hint: 'cli_xxxxxxxxxxxxxxxx'),
           const SizedBox(height: 12),
 
           const Text('App Secret',
               style: TextStyle(
-                  color: kMuted, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
           const SizedBox(height: 6),
-          _SecretInput(ctrl: appSecretCtrl, obscure: obscureSecret, onToggle: onToggleObscure),
+          _SecretInput(
+              ctrl: appSecretCtrl,
+              obscure: obscureSecret,
+              onToggle: onToggleObscure),
           const SizedBox(height: 10),
 
           const Text(
@@ -1050,7 +1208,9 @@ class _SecretInput extends StatelessWidget {
             const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         suffixIcon: IconButton(
           icon: Icon(
-              obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              obscure
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
               size: 16,
               color: kTextDim),
           onPressed: onToggle,
@@ -1074,76 +1234,4 @@ class _SecretInput extends StatelessWidget {
   }
 }
 
-// ── Download section ──────────────────────────────────────────────────────────
-
-class _DownloadSection extends StatelessWidget {
-  final TextEditingController cookiesBrowserCtrl;
-  final TextEditingController cookiesFileCtrl;
-  const _DownloadSection({
-    required this.cookiesBrowserCtrl,
-    required this.cookiesFileCtrl,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return PanelCard(
-      title: 'DOWNLOAD (yt-dlp)',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: kAmber.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: kAmber.withOpacity(0.2)),
-            ),
-            child: const Text(
-              'Nếu yt-dlp gặp lỗi với Douyin, hãy cung cấp cookies để vượt qua đăng nhập.\n'
-              'Cách A: Nhập tên trình duyệt (chrome · firefox · edge · brave).\n'
-              'Cách B: Xuất cookies ra file .txt (định dạng Netscape) và chọn đường dẫn.',
-              style: TextStyle(color: kTextDim, fontSize: 10.5),
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Text('Trình duyệt (tự động trích xuất)',
-              style: TextStyle(
-                  color: kMuted, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.9)),
-          const SizedBox(height: 6),
-          DarkInput(ctrl: cookiesBrowserCtrl, hint: 'chrome   (hoặc firefox / edge / brave — để trống để bỏ qua)'),
-          const SizedBox(height: 12),
-          const Text('Đường dẫn file Cookies',
-              style: TextStyle(
-                  color: kMuted, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.9)),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(child: DarkInput(ctrl: cookiesFileCtrl, hint: 'C:\\path\\to\\cookies.txt')),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: () async {
-                  final res = await FilePicker.platform.pickFiles(
-                    type: FileType.custom,
-                    allowedExtensions: ['txt'],
-                  );
-                  if (res?.files.single.path != null) {
-                    cookiesFileCtrl.text = res!.files.single.path!;
-                  }
-                },
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: kTextDim,
-                  side: const BorderSide(color: kBorder),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-                ),
-                child: const Text('Chọn', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
+// Download section removed
