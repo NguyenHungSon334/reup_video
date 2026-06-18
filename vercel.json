@@ -1,0 +1,20 @@
+{
+  "buildCommand": "pip install -r requirements.txt && cd flutter_ui && flutter build web --release",
+  "outputDirectory": "flutter_ui/build/web",
+  "framework": "other",
+  "functions": {
+    "backend/main.py": {
+      "runtime": "python3.9"
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "backend/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "flutter_ui/build/web/index.html"
+    }
+  ]
+}

@@ -29,8 +29,9 @@ class ApiService {
       final scheme = Uri.base.scheme == 'https' ? 'wss' : 'ws';
       if (backendUrl.isNotEmpty) {
         // Chuyển https:// → wss://, http:// → ws://
-        final wsUrl = backendUrl.replaceFirst('https://', 'wss://')
-                                .replaceFirst('http://', 'ws://');
+        final wsUrl = backendUrl
+            .replaceFirst('https://', 'wss://')
+            .replaceFirst('http://', 'ws://');
         return wsUrl;
       }
       return '$scheme://${Uri.base.authority}';

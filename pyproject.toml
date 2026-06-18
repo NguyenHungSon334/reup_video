@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reup-video"
+version = "1.0.0"
+description = "Douyin Video Reupload Service"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "yt-dlp",
+    "google-api-python-client",
+    "google-auth-oauthlib",
+    "google-auth-httplib2",
+]
+
+[tool.vercel]
+entrypoint = "backend.main:app"
