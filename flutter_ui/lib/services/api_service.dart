@@ -1,13 +1,27 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class ApiService {
   static String host = '127.0.0.1';
-  static int    port = 8000;
+  static int port = 8000;
 
-  static String get baseUrl   => 'http://$host:$port';
-  static String get wsBaseUrl => 'ws://$host:$port';
+  static String get baseUrl {
+    if (kIsWeb) {
+      return '';
+    }
+    return 'http://$host:$port';
+  }
+
+  static String get wsBaseUrl {
+    if (kIsWeb) {
+      final scheme = Uri.base.scheme == 'https' ? 'wss' : 'ws';
+      return '$scheme://${Uri.base.authority}';
+    }
+    return 'ws://$host:$port';
+  }
 
   // ── Config ────────────────────────────────────────────────────────────────
 
@@ -43,13 +57,14 @@ class ApiService {
 
   // ── Lark ──────────────────────────────────────────────────────────────────
 
-  Future<List<String>> submitToLark(
-      List<Map<String, dynamic>> items) async {
-    final res = await http.post(
-      Uri.parse('${ApiService.baseUrl}/records/submit'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'items': items}),
-    ).timeout(const Duration(seconds: 30));
+  Future<List<String>> submitToLark(List<Map<String, dynamic>> items) async {
+    final res = await http
+        .post(
+          Uri.parse('${ApiService.baseUrl}/records/submit'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'items': items}),
+        )
+        .timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) {
       final body = jsonDecode(res.body) as Map<String, dynamic>;
       throw Exception(body['detail'] ?? 'Gửi dữ liệu thất bại');
@@ -65,6 +80,42 @@ class ApiService {
         .get(Uri.parse('${ApiService.baseUrl}/gdrive/status'))
         .timeout(const Duration(seconds: 10));
     return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  Future<List<Map<String, dynamic>>> gdriveList(String folderId) async {
+    final uri = Uri.parse('${ApiService.baseUrl}/gdrive/list${folderId.isNotEmpty ? '?folder_id=${Uri.encodeComponent(folderId)}' : ''}');
+    final res = await http.get(uri).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      throw Exception(body['detail'] ?? 'Không thể liệt kê Drive');
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final items = (data['files'] as List).cast<Map<String, dynamic>>();
+    return items;
+  }
+
+  Future<Map<String, dynamic>> gdriveUpload(PlatformFile file, String folderId) async {
+    final uri = Uri.parse('${ApiService.baseUrl}/gdrive/upload');
+    final req = http.MultipartRequest('POST', uri);
+    if (folderId.isNotEmpty) req.fields['folder_id'] = folderId;
+
+    if (file.path != null && file.path!.isNotEmpty) {
+      final multipart = await http.MultipartFile.fromPath('file', file.path!);
+      req.files.add(multipart);
+    } else if (file.bytes != null) {
+      final multipart = http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name);
+      req.files.add(multipart);
+    } else {
+      throw Exception('No file bytes or path available');
+    }
+
+    final streamed = await req.send();
+    final res = await http.Response.fromStream(streamed);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw Exception(body['error'] ?? body['detail'] ?? 'Upload thất bại');
+    }
+    return body;
   }
 
   Future<void> gdriveConnect() async {

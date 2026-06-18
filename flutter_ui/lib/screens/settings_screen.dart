@@ -26,7 +26,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _gdriveCredCtrl       = TextEditingController();
   final _localPathCtrl        = TextEditingController();
   final _musicFolderCtrl      = TextEditingController();
+  final _musicDriveCtrl       = TextEditingController();
   final _logoPathCtrl         = TextEditingController();
+  final _logoDriveCtrl        = TextEditingController();
   final _appIdCtrl            = TextEditingController();
   final _appSecretCtrl        = TextEditingController();
   final _cookiesBrowserCtrl   = TextEditingController();
@@ -55,7 +57,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _gdriveCredCtrl.dispose();
     _localPathCtrl.dispose();
     _musicFolderCtrl.dispose();
+    _musicDriveCtrl.dispose();
     _logoPathCtrl.dispose();
+    _logoDriveCtrl.dispose();
     _appIdCtrl.dispose();
     _appSecretCtrl.dispose();
     _cookiesBrowserCtrl.dispose();
@@ -72,7 +76,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _gdriveCredCtrl.text   = cfg['gdrive_credentials_path'] as String? ?? '';
         _localPathCtrl.text    = cfg['local_folder']            as String? ?? '';
         _musicFolderCtrl.text  = cfg['music_folder']     as String? ?? '';
+        _musicDriveCtrl.text   = cfg['music_gdrive_folder_id'] as String? ?? '';
         _logoPathCtrl.text     = cfg['logo_path']        as String? ?? '';
+        _logoDriveCtrl.text    = cfg['logo_gdrive_folder_id'] as String? ?? '';
         _appIdCtrl.text          = cfg['lark_app_id']       as String? ?? '';
         _appSecretCtrl.text      = cfg['lark_app_secret']   as String? ?? '';
         _cookiesBrowserCtrl.text = cfg['cookies_browser']   as String? ?? '';
@@ -109,8 +115,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'gdrive_folder_id':          _gdriveCtrl.text.trim(),
         'gdrive_credentials_path':   _gdriveCredCtrl.text.trim(),
         'local_folder':              _localPathCtrl.text.trim(),
-        'music_folder':     _musicFolderCtrl.text.trim(),
-        'logo_path':        _logoPathCtrl.text.trim(),
+        'music_folder':              _musicFolderCtrl.text.trim(),
+        'music_gdrive_folder_id':    _musicDriveCtrl.text.trim(),
+        'logo_path':                 _logoPathCtrl.text.trim(),
+        'logo_gdrive_folder_id':     _logoDriveCtrl.text.trim(),
         'logo_scale':       _logoScale,
         'logo_position':    _logoPosition,
         'logo_opacity':     _logoOpacity,
@@ -208,7 +216,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 16),
                 _MediaSection(
                   musicFolderCtrl:   _musicFolderCtrl,
+                  musicDriveCtrl:    _musicDriveCtrl,
                   logoPathCtrl:      _logoPathCtrl,
+                  logoDriveCtrl:     _logoDriveCtrl,
+                  api:               widget.api,
                   logoScale:         _logoScale,
                   logoPosition:      _logoPosition,
                   logoOpacity:       _logoOpacity,
@@ -564,7 +575,10 @@ const _kPositions = {
 
 class _MediaSection extends StatelessWidget {
   final TextEditingController musicFolderCtrl;
+  final TextEditingController musicDriveCtrl;
   final TextEditingController logoPathCtrl;
+  final TextEditingController logoDriveCtrl;
+  final ApiService api;
   final int    logoScale;
   final String logoPosition;
   final double logoOpacity;
@@ -574,7 +588,10 @@ class _MediaSection extends StatelessWidget {
 
   const _MediaSection({
     required this.musicFolderCtrl,
+    required this.musicDriveCtrl,
     required this.logoPathCtrl,
+    required this.logoDriveCtrl,
+    required this.api,
     required this.logoScale,
     required this.logoPosition,
     required this.logoOpacity,
@@ -582,6 +599,52 @@ class _MediaSection extends StatelessWidget {
     required this.onPositionChanged,
     required this.onOpacityChanged,
   });
+
+  Future<void> _showFilesList(BuildContext context, String folderId, {bool isLogo = false}) async {
+    try {
+      final items = await api.gdriveList(folderId);
+      if (!context.mounted) return;
+      await showDialog(
+        context: context,
+        builder: (ctx) {
+          return AlertDialog(
+            title: Text('Files in $folderId', style: const TextStyle(fontSize: 14)),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView(
+                shrinkWrap: true,
+                children: items.map((f) {
+                  final name = f['name'] as String? ?? 'untitled';
+                  final link = f['webViewLink'] as String? ?? '';
+                  return ListTile(
+                    title: Text(name),
+                    subtitle: Text(f['mimeType'] as String? ?? '', style: const TextStyle(fontSize: 12)),
+                    trailing: Wrap(spacing: 8, children: [
+                      TextButton(
+                        child: const Text('Copy link', style: TextStyle(fontSize: 12)),
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied link for $name')));
+                          if (isLogo) {
+                            logoPathCtrl.text = link;
+                          }
+                        },
+                      ),
+                    ]),
+                  );
+                }).toList(),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Đóng')),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -623,6 +686,45 @@ class _MediaSection extends StatelessWidget {
               ),
             ],
           ),
+
+          const SizedBox(height: 8),
+          const Text('Drive Logo Folder ID', style: TextStyle(color: kMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(child: DarkInput(ctrl: logoDriveCtrl, hint: 'Drive folder ID for logos')),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: () async {
+                  final id = logoDriveCtrl.text.trim();
+                  if (id.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter folder ID'))); return; }
+                  await _showFilesList(context, id, isLogo: true);
+                },
+                child: const Text('List', style: TextStyle(fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: () async {
+                  final id = logoDriveCtrl.text.trim();
+                  if (id.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter folder ID'))); return; }
+                  final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['png','webp','jpg','jpeg']);
+                  if (res?.files.single != null) {
+                    final file = res!.files.single;
+                    try {
+                      final body = await api.gdriveUpload(file, id);
+                      final link = (body['link'] ?? body['meta']?['webViewLink'])?.toString() ?? '';
+                      if (link.isNotEmpty) logoPathCtrl.text = link;
+                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploaded: ${file.name}')));
+                    } catch (e) {
+                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload error: $e')));
+                    }
+                  }
+                },
+                child: const Text('Upload', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+
           const SizedBox(height: 14),
 
           // ── Logo scale ───────────────────────────────────────────────────────
@@ -774,6 +876,46 @@ class _MediaSection extends StatelessWidget {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
                 ),
                 child: const Text('Chọn', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+          const Text('Drive Music Folder ID', style: TextStyle(color: kMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.9)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(child: DarkInput(ctrl: musicDriveCtrl, hint: 'Drive folder ID for music')),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: () async {
+                  final id = musicDriveCtrl.text.trim();
+                  if (id.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter folder ID'))); return; }
+                  try {
+                    await _showFilesList(context, id, isLogo: false);
+                  } catch (e) {
+                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                  }
+                },
+                child: const Text('List', style: TextStyle(fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: () async {
+                  final id = musicDriveCtrl.text.trim();
+                  if (id.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter folder ID'))); return; }
+                  final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['mp3','aac','wav','ogg','m4a','flac']);
+                  if (res?.files.single != null) {
+                    final file = res!.files.single;
+                    try {
+                      final body = await api.gdriveUpload(file, id);
+                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploaded: ${file.name}')));
+                    } catch (e) {
+                      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload error: $e')));
+                    }
+                  }
+                },
+                child: const Text('Upload', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),
