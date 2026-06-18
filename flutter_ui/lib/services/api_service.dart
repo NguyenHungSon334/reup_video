@@ -1,0 +1,117 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
+
+class ApiService {
+  static String host = '127.0.0.1';
+  static int    port = 8000;
+
+  static String get baseUrl   => 'http://$host:$port';
+  static String get wsBaseUrl => 'ws://$host:$port';
+
+  // ── Config ────────────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getConfig() async {
+    final res = await http
+        .get(Uri.parse('${ApiService.baseUrl}/config'))
+        .timeout(const Duration(seconds: 5));
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  Future<void> saveConfig(Map<String, dynamic> config) async {
+    await http.post(
+      Uri.parse('${ApiService.baseUrl}/config'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(config),
+    );
+  }
+
+  // ── Jobs ──────────────────────────────────────────────────────────────────
+
+  Future<String> startJob(Map<String, dynamic> params) async {
+    final res = await http.post(
+      Uri.parse('${ApiService.baseUrl}/jobs'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(params),
+    );
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return data['job_id'] as String;
+  }
+
+  WebSocketChannel connectJobLogs(String jobId) =>
+      WebSocketChannel.connect(Uri.parse('${ApiService.wsBaseUrl}/ws/$jobId'));
+
+  // ── Lark ──────────────────────────────────────────────────────────────────
+
+  Future<List<String>> submitToLark(
+      List<Map<String, dynamic>> items) async {
+    final res = await http.post(
+      Uri.parse('${ApiService.baseUrl}/records/submit'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'items': items}),
+    ).timeout(const Duration(seconds: 30));
+    if (res.statusCode != 200) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      throw Exception(body['detail'] ?? 'Gửi dữ liệu thất bại');
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return (data['record_ids'] as List).cast<String>();
+  }
+
+  // ── Google Drive ──────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> gdriveStatus() async {
+    final res = await http
+        .get(Uri.parse('${ApiService.baseUrl}/gdrive/status'))
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  Future<void> gdriveConnect() async {
+    final res = await http
+        .post(Uri.parse('${ApiService.baseUrl}/gdrive/connect'))
+        .timeout(const Duration(minutes: 3)); // OAuth can take time
+    if (res.statusCode != 200) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      throw Exception(body['detail'] ?? 'Kết nối thất bại');
+    }
+  }
+
+  Future<LarkData> getLarkData() async {
+    final res = await http
+        .get(Uri.parse('${ApiService.baseUrl}/lark/data'))
+        .timeout(const Duration(seconds: 30));
+    if (res.statusCode != 200) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      throw Exception(body['detail'] ?? 'Không thể tải dữ liệu Lark');
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return LarkData.fromJson(data);
+  }
+}
+
+class LarkData {
+  final List<String> fields;
+  final List<Map<String, String>> records;
+  final int total;
+
+  const LarkData({
+    required this.fields,
+    required this.records,
+    required this.total,
+  });
+
+  factory LarkData.fromJson(Map<String, dynamic> json) {
+    final fields = (json['fields'] as List).cast<String>();
+    final records = (json['records'] as List)
+        .map((r) => (r as Map<String, dynamic>).map(
+              (k, v) => MapEntry(k, v?.toString() ?? ''),
+            ))
+        .toList();
+    return LarkData(
+      fields: fields,
+      records: records,
+      total: json['total'] as int? ?? records.length,
+    );
+  }
+}
