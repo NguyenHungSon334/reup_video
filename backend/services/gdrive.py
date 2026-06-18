@@ -117,3 +117,21 @@ def upload_gdrive(src: str, folder_id: str, log: Callable[[str, str], None],
     except Exception as e:
         log(f"❌ Unexpected upload error: {type(e).__name__}: {e}", "error")
         raise
+
+
+def list_folder_files(folder_id: str, credentials_path: str | None = None):
+    """Return list of files in a Drive folder. Each entry: id, name, mimeType, webViewLink"""
+    if not GDRIVE_OK:
+        raise RuntimeError("Google Drive libs missing. Run: pip install google-api-python-client google-auth-oauthlib")
+
+    svc = _gdrive_service(credentials_path)
+    q = f"'{folder_id.strip()}' in parents and trashed = false"
+    resp = svc.files().list(q=q, fields="files(id,name,mimeType,webViewLink)", supportsAllDrives=True).execute()
+    return resp.get("files", [])
+
+
+def get_file_metadata(file_id: str, credentials_path: str | None = None):
+    if not GDRIVE_OK:
+        raise RuntimeError("Google Drive libs missing. Run: pip install google-api-python-client google-auth-oauthlib")
+    svc = _gdrive_service(credentials_path)
+    return svc.files().get(fileId=file_id, fields="id,name,mimeType,webViewLink", supportsAllDrives=True).execute()

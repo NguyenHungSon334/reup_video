@@ -11,7 +11,14 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..config import load_config, save_config
 from ..services.downloader import download_video
-from ..services.gdrive import TOKEN_FILE, upload_gdrive, _gdrive_service
+from ..services.gdrive import (
+    TOKEN_FILE,
+    upload_gdrive,
+    _gdrive_service,
+    list_folder_files,
+    get_file_metadata,
+)
+from fastapi import UploadFile, File, Form
 from ..services.lark import (
     create_lark_records,
     fetch_lark_data,
@@ -105,6 +112,56 @@ async def gdrive_connect():
         return {"connected": True}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/gdrive/list")
+async def gdrive_list(folder_id: str | None = None):
+    """List files in a Drive folder. If folder_id omitted, use config `music_gdrive_folder_id` or `gdrive_folder_id`."""
+    cfg = load_config()
+    fid = (folder_id or cfg.get("music_gdrive_folder_id") or cfg.get("gdrive_folder_id") or "").strip()
+    if not fid:
+        raise HTTPException(status_code=400, detail="No folder_id provided and no default configured.")
+    try:
+        files = list_folder_files(fid, credentials_path=cfg.get("gdrive_credentials_path", "") or None)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"files": files}
+
+
+@router.post("/gdrive/upload")
+async def gdrive_upload(file: UploadFile = File(...), folder_id: str | None = Form(None)):
+    """Upload an incoming file to the specified Drive folder (or default from config). Returns file metadata and logs."""
+    cfg = load_config()
+    target = (folder_id or cfg.get("music_gdrive_folder_id") or cfg.get("gdrive_folder_id") or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="No target folder_id provided or configured.")
+
+    tmp = None
+    logs: list[dict] = []
+
+    def push_log(msg: str, t: str = "info") -> None:
+        logs.append({"type": t, "message": msg})
+
+    try:
+        import tempfile
+
+        suffix = Path(file.filename).suffix or ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tf:
+            tmp = tf.name
+            content = await file.read()
+            tf.write(content)
+
+        link = upload_gdrive(tmp, target, push_log, credentials_path=cfg.get("gdrive_credentials_path", "") or None)
+        meta = get_file_metadata(link.split("id=")[-1] if "id=" in link else None, credentials_path=cfg.get("gdrive_credentials_path", "") or None) if False else {"webViewLink": link}
+        return {"ok": True, "link": link, "logs": logs, "meta": meta}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "logs": logs}
+    finally:
+        try:
+            if tmp:
+                Path(tmp).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def GDRIVE_OK_CHECK() -> bool:
@@ -235,9 +292,15 @@ async def start_job(body: dict):
                 push(f"✓ Saved: {final}", "success")
                 result = {"status": "success", "path": final}
             else:
-                _DEFAULT_FOLDER = "1sCqlg4vQs2TlaiqlFUdrg9uAP7pQwxeh"
-                folder_id        = (body.get("gdrive_folder_id", "") or cfg.get("gdrive_folder_id", "") or _DEFAULT_FOLDER).strip()
-                credentials_path = cfg.get("gdrive_credentials_path", "").strip() or None
+                    _DEFAULT_FOLDER = cfg.get("reup_gdrive_folder_id") or cfg.get("gdrive_folder_id") or "1sCqlg4vQs2TlaiqlFUdrg9uAP7pQwxeh"
+                    folder_id = (
+                        body.get("reup_gdrive_folder_id")
+                        or body.get("gdrive_folder_id")
+                        or cfg.get("reup_gdrive_folder_id")
+                        or cfg.get("gdrive_folder_id")
+                        or _DEFAULT_FOLDER
+                    ).strip()
+                    credentials_path = cfg.get("gdrive_credentials_path", "").strip() or None
                 push(f"📁 Drive folder ID: {folder_id}", "info")
                 link = upload_gdrive(out, folder_id, push, credentials_path=credentials_path)
                 push(f"▶ Updating Lark field '{fm.get('link')}' with Drive link...", "info")

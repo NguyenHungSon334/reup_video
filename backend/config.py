@@ -16,6 +16,10 @@ _DEFAULTS: dict[str, Any] = {
     "cookies_browser": "",
     "cookies_file": "",
     "gdrive_folder_id": "1sCqlg4vQs2TlaiqlFUdrg9uAP7pQwxeh",
+    # Drive folder IDs for specific purposes
+    "music_gdrive_folder_id": "",
+    "logo_gdrive_folder_id": "",
+    "reup_gdrive_folder_id": "",
     "gdrive_credentials_path": "",
     "save_to": "drive",
     "local_folder": "",
