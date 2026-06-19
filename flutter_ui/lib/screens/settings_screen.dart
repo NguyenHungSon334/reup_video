@@ -122,9 +122,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'gdrive_credentials_path': _gdriveCredCtrl.text.trim(),
         'local_folder': _localPathCtrl.text.trim(),
         'music_folder': _musicFolderCtrl.text.trim(),
-        'music_gdrive_folder_id': _musicDriveCtrl.text.trim(),
-        'logo_path': _logoPathCtrl.text.trim(),
-        'logo_gdrive_folder_id': _logoDriveCtrl.text.trim(),
+        // music_gdrive_folder_id & logo_gdrive_folder_id come from env vars only
         'logo_scale': _logoScale,
         'logo_position': _logoPosition,
         'logo_opacity': _logoOpacity,
@@ -808,12 +806,17 @@ class _MediaSection extends StatelessWidget {
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.9)),
+          const SizedBox(height: 3),
+          const Text('Set via env: LOGO_GDRIVE_FOLDER_ID',
+              style: TextStyle(color: kTextDim, fontSize: 10.5)),
           const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
                   child: DarkInput(
-                      ctrl: logoDriveCtrl, hint: 'Drive folder ID for logos')),
+                      ctrl: logoDriveCtrl,
+                      hint: 'LOGO_GDRIVE_FOLDER_ID',
+                      readOnly: true)),
               const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: () async {
@@ -1053,12 +1056,17 @@ class _MediaSection extends StatelessWidget {
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.9)),
+          const SizedBox(height: 3),
+          const Text('Set via env: MUSIC_GDRIVE_FOLDER_ID',
+              style: TextStyle(color: kTextDim, fontSize: 10.5)),
           const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
                   child: DarkInput(
-                      ctrl: musicDriveCtrl, hint: 'Drive folder ID for music')),
+                      ctrl: musicDriveCtrl,
+                      hint: 'MUSIC_GDRIVE_FOLDER_ID',
+                      readOnly: true)),
               const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: () async {

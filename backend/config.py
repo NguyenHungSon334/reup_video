@@ -3,6 +3,14 @@ import os
 from pathlib import Path
 from typing import Any
 
+try:
+    from dotenv import load_dotenv
+    _env_file = Path(__file__).parent.parent / ".env"
+    if _env_file.exists():
+        load_dotenv(_env_file, override=False)  # don't override already-set env vars (Railway)
+except ImportError:
+    pass
+
 CONFIG_FILE = Path(__file__).parent.parent / "config.json"
 
 _DEFAULTS: dict[str, Any] = {
