@@ -137,6 +137,8 @@ class _HomeScreenState extends State<HomeScreen> {
         final msg = jsonDecode(raw as String) as Map<String, dynamic>;
         final type = msg['type'] as String? ?? 'info';
 
+        if (type == 'ping') continue;
+
         if (type == 'done') {
           final result = msg['result'] as Map<String, dynamic>? ?? {};
           if (result['status'] == 'success') {

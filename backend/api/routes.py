@@ -473,13 +473,22 @@ async def ws_logs(websocket: WebSocket, job_id: str):
         await websocket.close()
         return
     try:
+        total_waited = 0
         while True:
-            msg = await asyncio.wait_for(q.get(), timeout=600.0)
+            try:
+                msg = await asyncio.wait_for(q.get(), timeout=25.0)
+            except asyncio.TimeoutError:
+                total_waited += 25
+                if total_waited >= 600:
+                    await websocket.send_json({"type": "error", "message": "Job timed out"})
+                    break
+                # Keepalive ping — prevents Railway proxy from closing idle WS
+                await websocket.send_json({"type": "ping"})
+                continue
+            total_waited = 0
             await websocket.send_json(msg)
             if msg.get("type") == "done":
                 break
-    except asyncio.TimeoutError:
-        await websocket.send_json({"type": "error", "message": "Job timed out"})
     except WebSocketDisconnect:
         pass
     finally:
