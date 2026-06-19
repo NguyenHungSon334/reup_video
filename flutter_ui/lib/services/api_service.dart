@@ -10,13 +10,19 @@ class ApiService {
 
   static const String _railwayUrl = 'https://web-production-ba657.up.railway.app';
 
+  static bool get _isWebLocal {
+    if (!kIsWeb) return false;
+    final h = Uri.base.host;
+    return h == 'localhost' || h == '127.0.0.1' || h.isEmpty;
+  }
+
   static String get baseUrl {
-    if (kIsWeb) return _railwayUrl;
+    if (kIsWeb && !_isWebLocal) return _railwayUrl;
     return 'http://$host:$port';
   }
 
   static String get wsBaseUrl {
-    if (kIsWeb) {
+    if (kIsWeb && !_isWebLocal) {
       return _railwayUrl
           .replaceFirst('https://', 'wss://')
           .replaceFirst('http://', 'ws://');
@@ -148,7 +154,11 @@ class ApiService {
     return data['deleted'] as int? ?? recordIds.length;
   }
 
-  Future<LarkData> getLarkData({bool refresh = false}) async {
+  Future<LarkData> getLarkData({
+    bool refresh = false,
+    int page = 1,
+    int pageSize = 0,
+  }) async {
     const maxAttempts = 3;
     Exception? lastError;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
@@ -156,9 +166,14 @@ class ApiService {
         await Future.delayed(Duration(seconds: 4 * attempt));
       }
       try {
-        final uri = Uri.parse(
-          '${ApiService.baseUrl}/lark/data${refresh ? '?refresh=true' : ''}',
-        );
+        final params = <String, String>{};
+        if (refresh) params['refresh'] = 'true';
+        if (pageSize > 0) {
+          params['page'] = '$page';
+          params['page_size'] = '$pageSize';
+        }
+        final uri = Uri.parse('${ApiService.baseUrl}/lark/data')
+            .replace(queryParameters: params.isEmpty ? null : params);
         final res = await http.get(uri).timeout(const Duration(seconds: 90));
         if (res.statusCode == 502 || res.statusCode == 503) {
           lastError = Exception('Server đang khởi động lại (${res.statusCode}), thử lại...');
@@ -183,11 +198,19 @@ class LarkData {
   final List<String> fields;
   final List<Map<String, String>> records;
   final int total;
+  final int? page;
+  final int? pageSize;
+  final int? totalPages;
+  final bool hasMore;
 
   const LarkData({
     required this.fields,
     required this.records,
     required this.total,
+    this.page,
+    this.pageSize,
+    this.totalPages,
+    this.hasMore = false,
   });
 
   factory LarkData.fromJson(Map<String, dynamic> json) {
@@ -201,6 +224,10 @@ class LarkData {
       fields: fields,
       records: records,
       total: json['total'] as int? ?? records.length,
+      page: json['page'] as int?,
+      pageSize: json['page_size'] as int?,
+      totalPages: json['total_pages'] as int?,
+      hasMore: json['has_more'] as bool? ?? false,
     );
   }
 }

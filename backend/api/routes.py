@@ -36,6 +36,7 @@ router = APIRouter()
 
 _job_queues:  dict[str, asyncio.Queue] = {}
 _job_results: dict[str, dict[str, Any]] = {}
+_MAX_STORED_JOBS = 200  # evict oldest results beyond this limit
 
 # Lark data cache — avoid hitting Lark API on every page load
 _lark_cache: dict = {}
@@ -49,14 +50,37 @@ _ffmpeg_semaphore = threading.Semaphore(1)
 _data_subscribers: set[WebSocket] = set()
 
 
-async def _broadcast_data_changed() -> None:
-    """Invalidate cache and notify all UI clients that Lark data changed."""
-    global _lark_cache_ts
-    _lark_cache_ts = 0.0
+def _prune_old_jobs() -> None:
+    """Evict oldest job results + orphaned queues when over limit."""
+    overflow = len(_job_results) - _MAX_STORED_JOBS
+    if overflow <= 0:
+        return
+    to_remove = list(_job_results.keys())[:overflow]
+    for k in to_remove:
+        _job_results.pop(k, None)
+        _job_queues.pop(k, None)
+
+
+async def _broadcast_data_changed(new_records: list[dict] | None = None) -> None:
+    """Notify UI clients that Lark data changed.
+
+    If new_records is provided, patch the in-memory cache and send the new
+    rows directly so the UI can prepend them without a full re-fetch.
+    Otherwise invalidate the cache so the next GET forces a full reload.
+    """
+    global _lark_cache_ts, _lark_cache
+    if new_records is not None and _lark_cache:
+        _lark_cache["records"] = new_records + _lark_cache.get("records", [])
+        _lark_cache["total"] = len(_lark_cache["records"])
+    else:
+        _lark_cache_ts = 0.0
+    payload: dict = {"type": "data_changed"}
+    if new_records is not None:
+        payload["new_records"] = new_records
     dead: set[WebSocket] = set()
     for ws in list(_data_subscribers):
         try:
-            await ws.send_json({"type": "data_changed"})
+            await ws.send_json(payload)
         except Exception:
             dead.add(ws)
     _data_subscribers.difference_update(dead)
@@ -327,16 +351,29 @@ async def submit_records(body: dict):
     items = body.get("items", [])
     if not items:
         raise HTTPException(status_code=400, detail="No items provided")
+    fm = _lark_field_map(cfg)
     try:
         record_ids = await create_lark_records(
-            app_id, app_secret, items, field_map=_lark_field_map(cfg)
+            app_id, app_secret, items, field_map=fm
         )
     except Exception as exc:
         # Print full traceback to server console for debugging
         tb = traceback.format_exc()
         print("[ERROR] /records/submit exception:\n", tb)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    await _broadcast_data_changed()
+
+    # Build minimal record dicts so the UI can prepend without a full re-fetch
+    fields_list: list[str] = (_lark_cache.get("fields") or []) if _lark_cache else []
+    new_records: list[dict] = []
+    for rid, item in zip(record_ids, items):
+        row: dict = {f: "" for f in fields_list}
+        row[fm["link"]] = item.get("url", "")
+        row[fm["music"]] = "yes" if item.get("use_music") else "no"
+        row[fm["status"]] = "Chờ xử lý"
+        row["_record_id"] = rid
+        new_records.append(row)
+
+    await _broadcast_data_changed(new_records=new_records)
     return {"record_ids": record_ids, "count": len(record_ids)}
 
 
@@ -442,10 +479,18 @@ async def start_job(body: dict):
             shutil.rmtree(tmp, ignore_errors=True)
 
         _job_results[job_id] = result
+        _prune_old_jobs()
         asyncio.run_coroutine_threadsafe(_broadcast_data_changed(), loop)
         asyncio.run_coroutine_threadsafe(
             q.put({"type": "done", "result": result}), loop
         )
+
+        # If WS never connected, queue is orphaned — clean it up after 5 min
+        def _deferred_queue_cleanup() -> None:
+            time.sleep(300)
+            _job_queues.pop(job_id, None)
+
+        threading.Thread(target=_deferred_queue_cleanup, daemon=True).start()
 
     threading.Thread(target=worker, daemon=True).start()
     return {"job_id": job_id}
@@ -460,7 +505,8 @@ async def get_job_status(job_id: str):
 
 
 @router.get("/lark/data")
-async def get_lark_data(refresh: bool = False):
+async def get_lark_data(refresh: bool = False, page: int = 1, page_size: int = 0):
+    """Return Lark records. page_size=0 returns all (default). page_size>0 paginates."""
     global _lark_cache, _lark_cache_ts
     cfg        = load_config()
     app_id     = cfg.get("lark_app_id", "").strip()
@@ -473,25 +519,45 @@ async def get_lark_data(refresh: bool = False):
 
     now = time.monotonic()
     if not refresh and _lark_cache and (now - _lark_cache_ts) < _LARK_CACHE_TTL:
-        return _lark_cache
+        data = _lark_cache
+    else:
+        try:
+            data = await asyncio.wait_for(
+                fetch_lark_data(app_id, app_secret),
+                timeout=75.0,
+            )
+        except asyncio.TimeoutError:
+            if _lark_cache:
+                data = _lark_cache  # stale cache on timeout
+            else:
+                raise HTTPException(status_code=504, detail="Lark API timeout — quá 75 giây, thử lại.")
+        except Exception as exc:
+            if _lark_cache:
+                data = _lark_cache  # stale cache on error
+            else:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+        else:
+            _lark_cache = data
+            _lark_cache_ts = now
 
-    try:
-        data = await asyncio.wait_for(
-            fetch_lark_data(app_id, app_secret),
-            timeout=75.0,
-        )
-    except asyncio.TimeoutError:
-        if _lark_cache:
-            return _lark_cache  # return stale cache on timeout rather than error
-        raise HTTPException(status_code=504, detail="Lark API timeout — quá 75 giây, thử lại.")
-    except Exception as exc:
-        if _lark_cache:
-            return _lark_cache  # return stale cache on error
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if page_size <= 0:
+        return data
 
-    _lark_cache = data
-    _lark_cache_ts = now
-    return data
+    all_records = data["records"]
+    total = len(all_records)
+    page = max(1, page)
+    start = (page - 1) * page_size
+    sliced = all_records[start: start + page_size]
+    total_pages = (total + page_size - 1) // page_size
+    return {
+        "fields": data["fields"],
+        "records": sliced,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "has_more": page < total_pages,
+    }
 
 
 @router.post("/records/delete")
