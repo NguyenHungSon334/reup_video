@@ -3,6 +3,7 @@ import random
 import shutil
 import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,11 @@ router = APIRouter()
 
 _job_queues:  dict[str, asyncio.Queue] = {}
 _job_results: dict[str, dict[str, Any]] = {}
+
+# Lark data cache — avoid hitting Lark API on every page load
+_lark_cache: dict = {}
+_lark_cache_ts: float = 0.0
+_LARK_CACHE_TTL = 300.0  # 5 minutes
 
 _AUDIO_EXTS = {".mp3", ".aac", ".wav", ".ogg", ".m4a", ".flac"}
 
@@ -431,7 +437,8 @@ async def get_job_status(job_id: str):
 
 
 @router.get("/lark/data")
-async def get_lark_data():
+async def get_lark_data(refresh: bool = False):
+    global _lark_cache, _lark_cache_ts
     cfg        = load_config()
     app_id     = cfg.get("lark_app_id", "").strip()
     app_secret = cfg.get("lark_app_secret", "").strip()
@@ -440,15 +447,27 @@ async def get_lark_data():
             status_code=400,
             detail="Lark credentials not configured. Go to Settings page.",
         )
+
+    now = time.monotonic()
+    if not refresh and _lark_cache and (now - _lark_cache_ts) < _LARK_CACHE_TTL:
+        return _lark_cache
+
     try:
         data = await asyncio.wait_for(
             fetch_lark_data(app_id, app_secret),
             timeout=75.0,
         )
     except asyncio.TimeoutError:
+        if _lark_cache:
+            return _lark_cache  # return stale cache on timeout rather than error
         raise HTTPException(status_code=504, detail="Lark API timeout — quá 75 giây, thử lại.")
     except Exception as exc:
+        if _lark_cache:
+            return _lark_cache  # return stale cache on error
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    _lark_cache = data
+    _lark_cache_ts = now
     return data
 
 

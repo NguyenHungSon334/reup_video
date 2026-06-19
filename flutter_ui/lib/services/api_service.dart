@@ -148,16 +148,34 @@ class ApiService {
     return data['deleted'] as int? ?? recordIds.length;
   }
 
-  Future<LarkData> getLarkData() async {
-    final res = await http
-        .get(Uri.parse('${ApiService.baseUrl}/lark/data'))
-        .timeout(const Duration(seconds: 90));
-    if (res.statusCode != 200) {
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
-      throw Exception(body['detail'] ?? 'Không thể tải dữ liệu Lark');
+  Future<LarkData> getLarkData({bool refresh = false}) async {
+    const maxAttempts = 3;
+    Exception? lastError;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(Duration(seconds: 4 * attempt));
+      }
+      try {
+        final uri = Uri.parse(
+          '${ApiService.baseUrl}/lark/data${refresh ? '?refresh=true' : ''}',
+        );
+        final res = await http.get(uri).timeout(const Duration(seconds: 90));
+        if (res.statusCode == 502 || res.statusCode == 503) {
+          lastError = Exception('Server đang khởi động lại (${res.statusCode}), thử lại...');
+          continue;
+        }
+        if (res.statusCode != 200) {
+          final body = jsonDecode(res.body) as Map<String, dynamic>;
+          throw Exception(body['detail'] ?? 'Không thể tải dữ liệu Lark');
+        }
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        return LarkData.fromJson(data);
+      } on Exception catch (e) {
+        lastError = e;
+        if (attempt == maxAttempts - 1) break;
+      }
     }
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
-    return LarkData.fromJson(data);
+    throw lastError ?? Exception('Không thể tải dữ liệu Lark');
   }
 }
 
