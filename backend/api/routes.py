@@ -59,7 +59,7 @@ async def _broadcast_data_changed() -> None:
             await ws.send_json({"type": "data_changed"})
         except Exception:
             dead.add(ws)
-    _data_subscribers -= dead
+    _data_subscribers.difference_update(dead)
 
 _AUDIO_EXTS = {".mp3", ".aac", ".wav", ".ogg", ".m4a", ".flac"}
 
