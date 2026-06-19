@@ -132,6 +132,22 @@ class ApiService {
     }
   }
 
+  Future<int> deleteRecords(List<String> recordIds) async {
+    final res = await http
+        .post(
+          Uri.parse('${ApiService.baseUrl}/records/delete'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'record_ids': recordIds}),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (res.statusCode != 200) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      throw Exception(body['detail'] ?? 'Xóa thất bại');
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return data['deleted'] as int? ?? recordIds.length;
+  }
+
   Future<LarkData> getLarkData() async {
     final res = await http
         .get(Uri.parse('${ApiService.baseUrl}/lark/data'))

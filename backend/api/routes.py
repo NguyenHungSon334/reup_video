@@ -24,6 +24,7 @@ from ..services.gdrive import (
 from fastapi import UploadFile, File, Form
 from ..services.lark import (
     create_lark_records,
+    delete_lark_records,
     fetch_lark_data,
     get_field_names,
     update_lark_record_sync,
@@ -427,6 +428,23 @@ async def get_lark_data():
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return data
+
+
+@router.post("/records/delete")
+async def delete_records(body: dict):
+    record_ids = body.get("record_ids", [])
+    if not record_ids:
+        raise HTTPException(status_code=400, detail="record_ids is required")
+    cfg        = load_config()
+    app_id     = cfg.get("lark_app_id", "").strip()
+    app_secret = cfg.get("lark_app_secret", "").strip()
+    if not app_id or not app_secret:
+        raise HTTPException(status_code=400, detail="Lark credentials not configured.")
+    try:
+        count = await delete_lark_records(app_id, app_secret, record_ids)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"deleted": count}
 
 
 @router.websocket("/ws/{job_id}")

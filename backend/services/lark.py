@@ -181,6 +181,37 @@ async def create_lark_records(
     return [r["record_id"] for r in data.get("data", {}).get("records", [])]
 
 
+# ── Delete records ────────────────────────────────────────────────────────────
+
+async def delete_lark_records(
+    app_id: str,
+    app_secret: str,
+    record_ids: list[str],
+) -> int:
+    """Delete records by ID. Returns count deleted."""
+    if not record_ids:
+        return 0
+    token   = await _get_token(app_id, app_secret)
+    headers = {"Authorization": f"Bearer {token}"}
+    deleted = 0
+    # Lark batch_delete accepts up to 500 per request
+    chunk_size = 500
+    async with httpx.AsyncClient() as client:
+        for i in range(0, len(record_ids), chunk_size):
+            chunk = record_ids[i : i + chunk_size]
+            res = await client.post(
+                f"{LARK_BASE}/bitable/v1/apps/{BITABLE_APP_TOKEN}/tables/{TABLE_ID}/records/batch_delete",
+                headers=headers,
+                json={"records": chunk},
+                timeout=30.0,
+            )
+            data = res.json()
+            if data.get("code") != 0:
+                raise RuntimeError(f"Lark delete error: {data.get('msg')} (code={data.get('code')})")
+            deleted += len(chunk)
+    return deleted
+
+
 # ── Update a single record (sync — for use from worker threads) ───────────────
 
 def update_lark_record_sync(

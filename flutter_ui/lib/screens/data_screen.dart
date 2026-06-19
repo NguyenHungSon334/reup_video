@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/colors.dart';
@@ -223,6 +224,50 @@ class _DataScreenState extends State<DataScreen> {
     }
   }
 
+  Future<void> _deleteSelected() async {
+    if (_selectedIds.isEmpty) return;
+    final ids = _selectedIds.toList();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kCard,
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Xác nhận xóa',
+            style: TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w700)),
+        content: Text(
+          'Bạn muốn xóa ${ids.length} bản ghi đã chọn?\nHành động này không thể hoàn tác.',
+          style: const TextStyle(color: kTextDim, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy', style: TextStyle(color: kTextDim)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kRed,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+            ),
+            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final count = await widget.api.deleteRecords(ids);
+      _addLog('✓ Đã xóa $count bản ghi', LogType.success);
+      setState(() => _selectedIds.clear());
+      await _fetch();
+    } on Exception catch (e) {
+      _addLog('✗ Xóa thất bại: $e', LogType.error);
+    }
+  }
+
   Future<void> _showSubmitDialog() async {
     final ctrl = TextEditingController();
     final ok = await showDialog<bool>(
@@ -388,6 +433,28 @@ class _DataScreenState extends State<DataScreen> {
                   ),
                 ),
               ),
+              // Delete button — visible when rows selected
+              if (_selectedIds.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ElevatedButton.icon(
+                    onPressed: _processing ? null : _deleteSelected,
+                    icon: const Icon(Icons.delete_outline_rounded, size: 15),
+                    label: Text(
+                      'Xóa ${_selectedIds.length}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kRed,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: kRed.withOpacity(0.35),
+                      disabledForegroundColor: Colors.white54,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
               // Process button — always visible
               Padding(
                 padding: const EdgeInsets.only(right: 8),
@@ -807,21 +874,25 @@ class _DataCell extends StatelessWidget {
     }
 
     try {
-      final canLaunch = await canLaunchUrl(uri);
-      if (!canLaunch) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Ứng dụng không thể mở liên kết này')));
-        return;
-      }
-
-      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Không thể mở liên kết trong trình duyệt')));
+      if (kIsWeb) {
+        // On web, launchUrl with platformDefault opens a new tab
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      } else {
+        final canLaunch = await canLaunchUrl(uri);
+        if (!canLaunch) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('Ứng dụng không thể mở liên kết này')));
+          }
+          return;
+        }
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
     } catch (err) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Lỗi mở liên kết: ${err.toString()}')));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Lỗi mở liên kết: ${err.toString()}')));
+      }
     }
   }
 
