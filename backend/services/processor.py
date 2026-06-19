@@ -82,24 +82,33 @@ def process_video(
     parts = (["watermark"] if logo else []) + (["background music"] if music else [])
     log(f"▶ Adding {' + '.join(parts)}...", "info")
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        creationflags=_NO_WINDOW,
-    )
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=_NO_WINDOW,
+        )
+    except FileNotFoundError:
+        raise RuntimeError(
+            f"ffmpeg not found at '{cmd[0]}'. "
+            "imageio-ffmpeg may have failed to provide a binary."
+        )
+
+    output_lines: list[str] = []
     for line in proc.stdout:
         line = line.rstrip()
-        if line and ("frame=" in line or "error" in line.lower()):
+        if not line:
+            continue
+        output_lines.append(line)
+        if "frame=" in line or "error" in line.lower() or "invalid" in line.lower():
             log(line, "info")
     proc.wait()
     if proc.returncode != 0:
-        raise RuntimeError(
-            "ffmpeg processing failed. "
-            "Make sure ffmpeg is installed and added to PATH."
-        )
+        tail = "\n".join(output_lines[-20:])
+        raise RuntimeError(f"ffmpeg exited with code {proc.returncode}:\n{tail}")
     log("✓ Processing done", "success")
     return dst

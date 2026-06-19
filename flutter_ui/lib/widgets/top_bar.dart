@@ -7,7 +7,7 @@ class TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 56,
+      height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       decoration: const BoxDecoration(
         color: kSidebar,
@@ -19,9 +19,9 @@ class TopBar extends StatelessWidget {
             'Tự Động Hóa Video',
             style: TextStyle(
               color: kText,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.2,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
             ),
           ),
           const SizedBox(width: 10),
@@ -66,8 +66,8 @@ class TopBar extends StatelessWidget {
                   'Đang hoạt động',
                   style: TextStyle(
                     color: kGreen,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],

@@ -14,9 +14,9 @@ const kInputBg = Color(0xFFF8FAFC);
 const kAccent  = Color(0xFF2563EB);
 
 // ── Text ──────────────────────────────────────────────────────────────────────
-const kText    = Color(0xFF0F172A);
-const kTextDim = Color(0xFF64748B);
-const kMuted   = Color(0xFF94A3B8);
+const kText    = Color(0xFF0D1117);
+const kTextDim = Color(0xFF374151);
+const kMuted   = Color(0xFF6B7280);
 
 // ── Status ────────────────────────────────────────────────────────────────────
 const kGreen   = Color(0xFF16A34A);

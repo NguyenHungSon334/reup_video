@@ -47,7 +47,7 @@ class MediaPanel extends StatelessWidget {
             },
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: Container(height: 1, color: kBorder),
           ),
           OverlayRow(
@@ -98,14 +98,16 @@ class OverlayRow extends StatelessWidget {
         Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
-                color: kInputBg,
-                borderRadius: BorderRadius.circular(7),
-                border: Border.all(color: kBorder),
+                color: enabled ? const Color(0xFFEFF6FF) : kInputBg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: enabled ? const Color(0xFFBFDBFE) : kBorder),
               ),
-              child: Icon(icon, size: 17, color: kTextDim),
+              child: Icon(icon, size: 19,
+                  color: enabled ? kAccent : kTextDim),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -114,34 +116,40 @@ class OverlayRow extends StatelessWidget {
                 children: [
                   Text(label,
                       style: const TextStyle(
-                          color: kText, fontSize: 12.5, fontWeight: FontWeight.w500)),
+                          color: kText, fontSize: 14, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text(sub,
-                      style: const TextStyle(color: kMuted, fontSize: 10.5)),
+                      style: const TextStyle(color: kMuted, fontSize: 12)),
                 ],
               ),
             ),
             Switch(value: enabled, onChanged: onToggle),
             const SizedBox(width: 4),
-            TextButton(
+            OutlinedButton(
               onPressed: enabled ? onBrowse : null,
-              style: TextButton.styleFrom(
-                foregroundColor: kTextDim,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                minimumSize: Size.zero,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kAccent,
+                disabledForegroundColor: kMuted,
+                side: BorderSide(
+                    color: enabled ? kAccent : kBorder, width: 1.5),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                minimumSize: const Size(0, 36),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
-              child: const Text('Chọn', style: TextStyle(fontSize: 12)),
+              child: const Text('Chọn',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             ),
           ],
         ),
         if (enabled && path.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(top: 5, left: 50),
+            padding: const EdgeInsets.only(top: 6, left: 54),
             child: Text(
               path,
               style: const TextStyle(
-                  color: kTextDim, fontSize: 10, fontFamily: 'monospace'),
+                  color: kTextDim, fontSize: 11, fontFamily: 'monospace'),
               overflow: TextOverflow.ellipsis,
             ),
           ),

@@ -48,7 +48,7 @@ class Sidebar extends StatelessWidget {
                         'ReupPro',
                         style: TextStyle(
                           color: kText,
-                          fontSize: 14,
+                          fontSize: 16,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.3,
                         ),
@@ -57,7 +57,7 @@ class Sidebar extends StatelessWidget {
                         'v2.4.0',
                         style: TextStyle(
                           color: kMuted,
-                          fontSize: 10.5,
+                          fontSize: 12,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -79,7 +79,7 @@ class Sidebar extends StatelessWidget {
               'MENU',
               style: TextStyle(
                 color: kMuted,
-                fontSize: 9.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.2,
               ),
@@ -156,8 +156,8 @@ class _NavItemState extends State<NavItem> {
                   widget.label,
                   style: TextStyle(
                     color: _active ? Colors.white : (_hovered ? kText : kTextDim),
-                    fontSize: 13,
-                    fontWeight: _active ? FontWeight.w600 : FontWeight.w500,
+                    fontSize: 14,
+                    fontWeight: _active ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
               ],

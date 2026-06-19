@@ -26,16 +26,16 @@ class DestPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            height: 34,
+            height: 40,
             decoration: BoxDecoration(
               color: kInputBg,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(color: kBorder),
             ),
             child: Row(
               children: [
                 DestTab(label: 'Google Drive', active: tab == 0, onTap: () => onTab(0)),
-                DestTab(label: 'Thư mục cục bộ',  active: tab == 1, onTap: () => onTab(1)),
+                DestTab(label: 'Thư mục cục bộ', active: tab == 1, onTap: () => onTab(1)),
               ],
             ),
           ),
@@ -44,8 +44,8 @@ class DestPanel extends StatelessWidget {
             const Text(
               'ID Thư mục',
               style: TextStyle(
-                  color: kMuted, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.9),
+                  color: kTextDim, fontSize: 12,
+                  fontWeight: FontWeight.w700, letterSpacing: 0.4),
             ),
             const SizedBox(height: 6),
             DarkInput(
@@ -56,8 +56,8 @@ class DestPanel extends StatelessWidget {
             const Text(
               'Đường dẫn lưu video',
               style: TextStyle(
-                  color: kMuted, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.9),
+                  color: kTextDim, fontSize: 12,
+                  fontWeight: FontWeight.w700, letterSpacing: 0.4),
             ),
             const SizedBox(height: 6),
             Row(
@@ -72,13 +72,14 @@ class DestPanel extends StatelessWidget {
                     if (path != null) localPathCtrl.text = path;
                   },
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: kTextDim,
-                    side: const BorderSide(color: kBorder),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    foregroundColor: kAccent,
+                    side: const BorderSide(color: kAccent, width: 1.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5)),
+                        borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: const Text('Chọn', style: TextStyle(fontSize: 12)),
+                  child: const Text('Chọn',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
@@ -109,17 +110,16 @@ class DestTab extends StatelessWidget {
           duration: const Duration(milliseconds: 130),
           margin: const EdgeInsets.all(3),
           decoration: BoxDecoration(
-            color: active ? kCard : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-            border: active ? Border.all(color: kBorder) : null,
+            color: active ? kAccent : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
           ),
           alignment: Alignment.center,
           child: Text(
             label,
             style: TextStyle(
-              color: active ? kText : kMuted,
-              fontSize: 12,
-              fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+              color: active ? Colors.white : kMuted,
+              fontSize: 13,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
             ),
           ),
         ),

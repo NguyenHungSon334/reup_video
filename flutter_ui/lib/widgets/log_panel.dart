@@ -85,8 +85,8 @@ class _LogPanelState extends State<LogPanel> {
                   'Nhật ký xử lý',
                   style: TextStyle(
                     color: kText,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const Spacer(),
@@ -94,7 +94,7 @@ class _LogPanelState extends State<LogPanel> {
                   timeStr,
                   style: const TextStyle(
                     color: kMuted,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontFamily: 'monospace',
                   ),
                 ),
@@ -148,29 +148,29 @@ class _LogPanelState extends State<LogPanel> {
                     Text(
                       widget.running ? 'ĐANG XỬ LÝ' : 'TRẠNG THÁI',
                       style: const TextStyle(
-                        color: kMuted,
-                        fontSize: 9,
+                        color: kTextDim,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 1.1,
+                        letterSpacing: 0.6,
                       ),
                     ),
                     const Spacer(),
                     Text(
                       '${(widget.progress * 100).toStringAsFixed(0)}%',
                       style: const TextStyle(
-                        color: kMuted,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w600,
+                        color: kTextDim,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 6),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(6),
                   child: LinearProgressIndicator(
                     value: widget.running ? widget.progress : 0,
-                    minHeight: 4,
+                    minHeight: 6,
                     backgroundColor: kBorder,
                     valueColor: const AlwaysStoppedAnimation<Color>(kAccent),
                   ),
@@ -233,7 +233,7 @@ class LogRow extends StatelessWidget {
             entry.time,
             style: const TextStyle(
               color: kMuted,
-              fontSize: 10.5,
+              fontSize: 12,
               fontFamily: 'monospace',
             ),
           ),
@@ -243,7 +243,7 @@ class LogRow extends StatelessWidget {
               entry.message,
               style: TextStyle(
                 color: _msgColor,
-                fontSize: 11.5,
+                fontSize: 13,
                 fontFamily: 'monospace',
               ),
             ),

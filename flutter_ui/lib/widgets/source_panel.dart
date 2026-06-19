@@ -38,16 +38,16 @@ class _SourcePanelState extends State<SourcePanel> {
     Widget badge = const Icon(Icons.visibility_outlined, size: 14, color: kMuted);
     if (_urlCount > 0) {
       badge = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         decoration: BoxDecoration(
           color: const Color(0xFFEFF6FF),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFBFDBFE)),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFBFDBFE), width: 1.5),
         ),
         child: Text(
           '$_urlCount đường dẫn',
           style: const TextStyle(
-              color: kAccent, fontSize: 10, fontWeight: FontWeight.w600),
+              color: kAccent, fontSize: 11, fontWeight: FontWeight.w700),
         ),
       );
     }
@@ -63,60 +63,59 @@ class _SourcePanelState extends State<SourcePanel> {
             maxLines: 5,
             minLines: 3,
             style: const TextStyle(
-                color: kText, fontSize: 11, fontFamily: 'monospace'),
+                color: kText, fontSize: 13, fontFamily: 'monospace'),
             decoration: InputDecoration(
               hintText: 'Dán text chia sẻ Douyin hoặc URL...',
-              hintStyle: const TextStyle(color: kMuted, fontSize: 12),
+              hintStyle: const TextStyle(color: kMuted, fontSize: 13),
               filled: true,
               fillColor: kInputBg,
               contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: kBorder),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: kBorder),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(9),
-                borderSide: const BorderSide(color: kAccent, width: 1.5),
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: kAccent, width: 2),
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(
             children: [
               OutlinedButton.icon(
                 onPressed: () async {
-                  final data =
-                      await Clipboard.getData(Clipboard.kTextPlain);
+                  final data = await Clipboard.getData(Clipboard.kTextPlain);
                   if (data?.text != null) widget.ctrl.text = data!.text!;
                 },
-                icon: const Icon(Icons.content_paste_rounded, size: 13),
-                label: const Text('Dán', style: TextStyle(fontSize: 12)),
+                icon: const Icon(Icons.content_paste_rounded, size: 15),
+                label: const Text('Dán',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: kTextDim,
-                  side: const BorderSide(color: kBorder),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                  foregroundColor: kAccent,
+                  side: const BorderSide(color: kAccent, width: 1.5),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5)),
+                      borderRadius: BorderRadius.circular(10)),
                 ),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: () => widget.ctrl.clear(),
-                icon: const Icon(Icons.clear_rounded, size: 13),
-                label: const Text('Xóa', style: TextStyle(fontSize: 12)),
+                icon: const Icon(Icons.clear_rounded, size: 15),
+                label: const Text('Xóa',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: kTextDim,
-                  side: const BorderSide(color: kBorder),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                  side: const BorderSide(color: kBorder, width: 1.5),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5)),
+                      borderRadius: BorderRadius.circular(10)),
                 ),
               ),
             ],
