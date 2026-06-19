@@ -1,4 +1,5 @@
 import io
+import json
 import mimetypes
 import os
 import re
@@ -9,6 +10,25 @@ _BASE = Path(__file__).parent.parent
 TOKEN_FILE = _BASE / "token.json"
 CREDENTIALS_FILE = _BASE / "credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+
+def _bootstrap_from_env() -> None:
+    """Write credentials/token from env vars to disk if files don't exist yet."""
+    creds_json = os.environ.get("GDRIVE_CREDENTIALS_JSON", "").strip()
+    if creds_json and not CREDENTIALS_FILE.exists():
+        try:
+            CREDENTIALS_FILE.write_text(creds_json, encoding="utf-8")
+        except Exception:
+            tmp = Path("/tmp/credentials.json")
+            tmp.write_text(creds_json, encoding="utf-8")
+
+    token_json = os.environ.get("GDRIVE_TOKEN_JSON", "").strip()
+    if token_json and not TOKEN_FILE.exists():
+        try:
+            TOKEN_FILE.write_text(token_json, encoding="utf-8")
+        except Exception:
+            tmp = Path("/tmp/token.json")
+            tmp.write_text(token_json, encoding="utf-8")
 
 try:
     from google.auth.transport.requests import Request
@@ -33,7 +53,14 @@ def _gdrive_service(credentials_path: str | None = None):
             "Run: pip install google-api-python-client google-auth-oauthlib"
         )
 
+    _bootstrap_from_env()
+
     cred_file = Path(credentials_path).expanduser() if credentials_path else CREDENTIALS_FILE
+    if not cred_file.exists():
+        # Also try /tmp fallback (Railway read-only filesystem)
+        tmp_cred = Path("/tmp/credentials.json")
+        if tmp_cred.exists():
+            cred_file = tmp_cred
     if not cred_file.exists():
         raise FileNotFoundError(
             f"credentials.json not found.\n"
@@ -44,8 +71,9 @@ def _gdrive_service(credentials_path: str | None = None):
         )
 
     creds = None
-    if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+    token_path = TOKEN_FILE if TOKEN_FILE.exists() else Path("/tmp/token.json")
+    if token_path.exists():
+        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -54,7 +82,8 @@ def _gdrive_service(credentials_path: str | None = None):
             flow = InstalledAppFlow.from_client_secrets_file(str(cred_file), SCOPES)
             creds = flow.run_local_server(port=0)
 
-        with open(TOKEN_FILE, "w") as f:
+        save_path = TOKEN_FILE if os.access(TOKEN_FILE.parent, os.W_OK) else Path("/tmp/token.json")
+        with open(save_path, "w") as f:
             f.write(creds.to_json())
 
     return build("drive", "v3", credentials=creds)
