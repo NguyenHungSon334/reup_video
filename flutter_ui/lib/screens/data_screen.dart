@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../constants/colors.dart';
+import '../utils/open_url.dart';
 import '../models/log_entry.dart';
 import '../services/api_service.dart';
 import '../utils/douyin_parser.dart';
@@ -865,29 +864,8 @@ class _DataCell extends StatelessWidget {
 
   Future<void> _openUrl(BuildContext context) async {
     if (!_isUrl) return;
-
-    final uri = Uri.tryParse(text);
-    if (uri == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Liên kết không hợp lệ')));
-      return;
-    }
-
     try {
-      if (kIsWeb) {
-        // On web, launchUrl with platformDefault opens a new tab
-        await launchUrl(uri, mode: LaunchMode.platformDefault);
-      } else {
-        final canLaunch = await canLaunchUrl(uri);
-        if (!canLaunch) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text('Ứng dụng không thể mở liên kết này')));
-          }
-          return;
-        }
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+      await openUrl(text);
     } catch (err) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
