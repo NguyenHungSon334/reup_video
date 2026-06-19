@@ -6,6 +6,18 @@ from typing import Any
 CONFIG_FILE = Path(__file__).parent.parent / "config.json"
 
 _DEFAULTS: dict[str, Any] = {
+    # ── Lark (fixed) ──────────────────────────────────────────────────────────
+    "lark_app_id":               "cli_aab92e864f78ded0",
+    "lark_app_secret":           "4lKobJ2pNckhIZcJ9C3aAxVkRLmOHB1O",
+    "lark_field_link":           "Link video Douyin",
+    "lark_field_link_completed": "Link video hoàn thành",
+    "lark_field_music":          "Nhạc",
+    "lark_field_music_name":     "Tên Nhạc",
+    "lark_field_status":         "Status",
+    # ── Google Drive (fixed) ──────────────────────────────────────────────────
+    "gdrive_folder_id":          "1sCqlg4vQs2TlaiqlFUdrg9uAP7pQwxeh",
+    "reup_gdrive_folder_id":     "1Oi3Rx1_nMfOIMh-L8iiJ1Z2d34YKJMxy",
+    # ── Media settings (configurable via Settings page) ───────────────────────
     "logo_path": "",
     "use_logo": True,
     "logo_scale": 150,
@@ -14,22 +26,13 @@ _DEFAULTS: dict[str, Any] = {
     "music_path": "",
     "use_music": False,
     "music_folder": "",
-    "cookies_browser": "",
-    "cookies_file": "",
-    "gdrive_folder_id": "1sCqlg4vQs2TlaiqlFUdrg9uAP7pQwxeh",
     "music_gdrive_folder_id": "",
     "logo_gdrive_folder_id": "",
-    "reup_gdrive_folder_id": "1Oi3Rx1_nMfOIMh-L8iiJ1Z2d34YKJMxy",
     "gdrive_credentials_path": "",
+    "cookies_browser": "",
+    "cookies_file": "",
     "save_to": "drive",
     "local_folder": "",
-    "lark_app_id": "",
-    "lark_app_secret": "",
-    "lark_field_link":           "Link video Douyin",
-    "lark_field_link_completed": "Link video hoàn thành",
-    "lark_field_music":          "Nhạc",
-    "lark_field_music_name":     "Tên Nhạc",
-    "lark_field_status":         "Status",
 }
 
 # Map env var name → config key (Railway environment variables override defaults)
