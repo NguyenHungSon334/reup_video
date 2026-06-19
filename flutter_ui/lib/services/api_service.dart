@@ -151,7 +151,7 @@ class ApiService {
   Future<LarkData> getLarkData() async {
     final res = await http
         .get(Uri.parse('${ApiService.baseUrl}/lark/data'))
-        .timeout(const Duration(seconds: 30));
+        .timeout(const Duration(seconds: 90));
     if (res.statusCode != 200) {
       final body = jsonDecode(res.body) as Map<String, dynamic>;
       throw Exception(body['detail'] ?? 'Không thể tải dữ liệu Lark');

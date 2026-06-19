@@ -441,7 +441,12 @@ async def get_lark_data():
             detail="Lark credentials not configured. Go to Settings page.",
         )
     try:
-        data = await fetch_lark_data(app_id, app_secret)
+        data = await asyncio.wait_for(
+            fetch_lark_data(app_id, app_secret),
+            timeout=75.0,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Lark API timeout — quá 75 giây, thử lại.")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return data

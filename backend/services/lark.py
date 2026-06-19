@@ -75,7 +75,7 @@ async def fetch_lark_data(app_id: str, app_secret: str) -> dict:
                 f"{LARK_BASE}/bitable/v1/apps/{BITABLE_APP_TOKEN}/tables/{TABLE_ID}/records",
                 headers=headers,
                 params=params,
-                timeout=20.0,
+                timeout=30.0,
             )
             r_data = r_res.json()
             if r_data.get("code") != 0:
