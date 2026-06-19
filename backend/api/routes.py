@@ -42,6 +42,9 @@ _lark_cache: dict = {}
 _lark_cache_ts: float = 0.0
 _LARK_CACHE_TTL = 300.0  # 5 minutes
 
+# Max concurrent ffmpeg jobs — prevents OOM when many videos queued at once
+_ffmpeg_semaphore = threading.Semaphore(3)
+
 _AUDIO_EXTS = {".mp3", ".aac", ".wav", ".ogg", ".m4a", ".flac"}
 
 
@@ -376,9 +379,11 @@ async def start_job(body: dict):
                 logo_scale    = int(cfg.get("logo_scale", 150))
                 logo_position = cfg.get("logo_position", "top_left")
                 logo_opacity  = float(cfg.get("logo_opacity", 1.0))
-                process_video(video, out, push, logo=logo, music=music,
-                              logo_scale=logo_scale, logo_position=logo_position,
-                              logo_opacity=logo_opacity)
+                push("⏳ Chờ slot xử lý...", "info")
+                with _ffmpeg_semaphore:
+                    process_video(video, out, push, logo=logo, music=music,
+                                  logo_scale=logo_scale, logo_position=logo_position,
+                                  logo_opacity=logo_opacity)
             else:
                 out = video
                 push("⊘ No processing (logo + music both off)", "info")
