@@ -51,32 +51,53 @@ class DarkInput extends StatelessWidget {
   final TextEditingController ctrl;
   final String hint;
   final ValueChanged<String>? onChanged;
-  const DarkInput({super.key, required this.ctrl, required this.hint, this.onChanged});
+  final bool readOnly;
+  const DarkInput({
+    super.key,
+    required this.ctrl,
+    required this.hint,
+    this.onChanged,
+    this.readOnly = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: ctrl,
       onChanged: onChanged,
-      style: const TextStyle(color: kText, fontSize: 12),
+      readOnly: readOnly,
+      style: TextStyle(
+        color: readOnly ? kTextDim : kText,
+        fontSize: 12,
+        fontFamily: readOnly ? 'monospace' : null,
+      ),
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: kMuted, fontSize: 12),
         filled: true,
-        fillColor: kInputBg,
+        fillColor: readOnly ? const Color(0xFF0A0A12) : kInputBg,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        suffixIcon: readOnly
+            ? const Icon(Icons.lock_outline_rounded, size: 13, color: kMuted)
+            : null,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(5),
           borderSide: const BorderSide(color: kBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(5),
-          borderSide: const BorderSide(color: kBorder),
+          borderSide: BorderSide(
+            color: readOnly ? const Color(0xFF161625) : kBorder,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(5),
-          borderSide: BorderSide(color: Color.fromRGBO(37, 99, 235, 0.55)),
+          borderSide: BorderSide(
+            color: readOnly
+                ? const Color(0xFF161625)
+                : const Color.fromRGBO(37, 99, 235, 0.55),
+          ),
         ),
       ),
     );

@@ -119,8 +119,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Save other settings to backend config
       await widget.api.saveConfig({
         'save_to': _destTab == 0 ? 'drive' : 'local',
-        'gdrive_folder_id': _gdriveCtrl.text.trim(),
-        'reup_gdrive_folder_id': _reupDriveCtrl.text.trim(),
         'gdrive_credentials_path': _gdriveCredCtrl.text.trim(),
         'local_folder': _localPathCtrl.text.trim(),
         'music_folder': _musicFolderCtrl.text.trim(),
@@ -130,8 +128,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'logo_scale': _logoScale,
         'logo_position': _logoPosition,
         'logo_opacity': _logoOpacity,
-        'lark_app_id': _appIdCtrl.text.trim(),
-        'lark_app_secret': _appSecretCtrl.text.trim(),
         'cookies_browser': _cookiesBrowserCtrl.text.trim(),
         'cookies_file': _cookiesFileCtrl.text.trim(),
       });
@@ -245,9 +241,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _LarkSection(
                   appIdCtrl: _appIdCtrl,
                   appSecretCtrl: _appSecretCtrl,
-                  obscureSecret: _obscureSecret,
-                  onToggleObscure: () =>
-                      setState(() => _obscureSecret = !_obscureSecret),
                 ),
                 const SizedBox(height: 16),
               ],
@@ -516,7 +509,8 @@ class _OutputSectionState extends State<_OutputSection> {
             const SizedBox(height: 6),
             DarkInput(
                 ctrl: widget.gdriveCtrl,
-                hint: '1ABC_folder_id_xyz  (để trống = Thư mục gốc Drive)'),
+                hint: '1ABC_folder_id_xyz',
+                readOnly: true),
             const SizedBox(height: 14),
             const Text('ID Thư mục tải video Reup',
                 style: TextStyle(
@@ -527,7 +521,8 @@ class _OutputSectionState extends State<_OutputSection> {
             const SizedBox(height: 6),
             DarkInput(
                 ctrl: widget.reupDriveCtrl,
-                hint: '1Oi3Rx1_nMfOIMh-L8iiJ1Z2d34YKJMxy'),
+                hint: '1Oi3Rx1_nMfOIMh-L8iiJ1Z2d34YKJMxy',
+                readOnly: true),
             const SizedBox(height: 8),
             const Text(
               'Để trống để dùng thư mục mặc định hoặc cấu hình backend.',
@@ -1076,14 +1071,10 @@ class _MediaSection extends StatelessWidget {
 class _LarkSection extends StatelessWidget {
   final TextEditingController appIdCtrl;
   final TextEditingController appSecretCtrl;
-  final bool obscureSecret;
-  final VoidCallback onToggleObscure;
 
   const _LarkSection({
     required this.appIdCtrl,
     required this.appSecretCtrl,
-    required this.obscureSecret,
-    required this.onToggleObscure,
   });
 
   @override
@@ -1133,7 +1124,10 @@ class _LarkSection extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.9)),
           const SizedBox(height: 6),
-          DarkInput(ctrl: appIdCtrl, hint: 'cli_xxxxxxxxxxxxxxxx'),
+          DarkInput(
+              ctrl: appIdCtrl,
+              hint: 'cli_xxxxxxxxxxxxxxxx',
+              readOnly: true),
           const SizedBox(height: 12),
 
           const Text('App Secret',
@@ -1143,17 +1137,11 @@ class _LarkSection extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.9)),
           const SizedBox(height: 6),
-          _SecretInput(
+          DarkInput(
               ctrl: appSecretCtrl,
-              obscure: obscureSecret,
-              onToggle: onToggleObscure),
+              hint: '••••••••••••••••••••',
+              readOnly: true),
           const SizedBox(height: 10),
-
-          const Text(
-            'Tạo ứng dụng tùy chỉnh tại open.larksuite.com → sao chép App ID & Secret. '
-            'Cấp quyền truy cập Bitable cho ứng dụng.',
-            style: TextStyle(color: kMuted, fontSize: 10.5),
-          ),
         ],
       ),
     );
