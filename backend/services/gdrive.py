@@ -195,7 +195,8 @@ def list_folder_files(folder_id: str, credentials_path: str | None = None):
         raise RuntimeError("Google Drive libs missing. Run: pip install google-api-python-client google-auth-oauthlib")
 
     svc = _gdrive_service(credentials_path)
-    q = f"'{folder_id.strip()}' in parents and trashed = false"
+    fid = folder_id.strip()
+    q = f"'{fid}' in parents and trashed = false"
     files: list[dict] = []
     page_token = None
     while True:
@@ -203,6 +204,7 @@ def list_folder_files(folder_id: str, credentials_path: str | None = None):
             q=q,
             fields="nextPageToken, files(id,name,mimeType,webViewLink)",
             supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
             pageToken=page_token,
         ).execute()
         files.extend(resp.get("files", []))

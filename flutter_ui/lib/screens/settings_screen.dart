@@ -648,57 +648,134 @@ class _MediaSection extends StatelessWidget {
 
   Future<void> _showFilesList(BuildContext context, String folderId,
       {bool isLogo = false}) async {
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: SizedBox(
+          height: 60,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+    );
+
+    List<Map<String, dynamic>> items = [];
+    String? errorMsg;
     try {
-      final items = await api.gdriveList(folderId);
-      if (!context.mounted) return;
-      await showDialog(
-        context: context,
-        builder: (ctx) {
-          return AlertDialog(
-            title: Text('Files in $folderId',
-                style: const TextStyle(fontSize: 14)),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: ListView(
-                shrinkWrap: true,
-                children: items.map((f) {
-                  final name = f['name'] as String? ?? 'untitled';
-                  final link = f['webViewLink'] as String? ?? '';
-                  return ListTile(
-                    title: Text(name),
-                    subtitle: Text(f['mimeType'] as String? ?? '',
-                        style: const TextStyle(fontSize: 12)),
-                    trailing: Wrap(spacing: 8, children: [
-                      TextButton(
-                        child: const Text('Copy link',
-                            style: TextStyle(fontSize: 12)),
-                        onPressed: () {
-                          Navigator.of(ctx).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Copied link for $name')));
-                          if (isLogo) {
-                            logoPathCtrl.text = link;
-                          }
+      items = await api.gdriveList(folderId);
+    } catch (e) {
+      errorMsg = e.toString().replaceFirst('Exception: ', '');
+    }
+
+    if (!context.mounted) return;
+    Navigator.of(context).pop(); // close loading dialog
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          title: Row(
+            children: [
+              const Icon(Icons.folder_open_rounded, size: 16, color: kAccent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isLogo ? 'Logo Folder' : 'Music Folder',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kText),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 480,
+            child: errorMsg != null
+                ? Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.error_outline_rounded, size: 16, color: kRed),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            errorMsg!,
+                            style: const TextStyle(color: kRed, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : items.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Text(
+                            'Folder trống hoặc không có file phù hợp',
+                            style: TextStyle(color: kMuted, fontSize: 13),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) =>
+                            const Divider(height: 1, color: kBorder),
+                        itemBuilder: (_, i) {
+                          final f = items[i];
+                          final name = f['name'] as String? ?? 'untitled';
+                          final link = f['webViewLink'] as String? ?? '';
+                          final mime = f['mimeType'] as String? ?? '';
+                          return ListTile(
+                            dense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                            leading: Icon(
+                              mime.contains('image')
+                                  ? Icons.image_outlined
+                                  : mime.contains('audio')
+                                      ? Icons.music_note_outlined
+                                      : Icons.insert_drive_file_outlined,
+                              size: 18,
+                              color: kAccent,
+                            ),
+                            title: Text(name,
+                                style: const TextStyle(fontSize: 12, color: kText)),
+                            subtitle: Text(mime,
+                                style: const TextStyle(fontSize: 10, color: kMuted)),
+                            trailing: isLogo
+                                ? TextButton(
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: const Text('Chọn',
+                                        style: TextStyle(fontSize: 11, color: kAccent)),
+                                    onPressed: () {
+                                      logoPathCtrl.text = link;
+                                      Navigator.of(ctx).pop();
+                                    },
+                                  )
+                                : null,
+                          );
                         },
                       ),
-                    ]),
-                  );
-                }).toList(),
-              ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Đóng', style: TextStyle(color: kTextDim)),
             ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Đóng')),
-            ],
-          );
-        },
-      );
-    } catch (e) {
-      if (context.mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
-    }
+          ],
+        );
+      },
+    );
   }
 
   @override

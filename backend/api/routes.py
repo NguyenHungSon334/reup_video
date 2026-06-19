@@ -66,20 +66,29 @@ def _download_drive_path(path: str, cfg: dict, tmp_dir: str, push) -> str | None
 
 
 def _pick_logo(body: dict, cfg: dict, tmp_dir: str, push) -> str | None:
+    # Folder has priority — always pick from Drive folder if configured
+    folder_id = cfg.get("logo_gdrive_folder_id", "").strip()
+    if folder_id:
+        try:
+            push(f"▶ Fetching logo from Drive folder {folder_id}...", "info")
+            files = list_folder_files(folder_id, credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
+            logos = [f for f in files if Path(f.get("name", "")).suffix.lower() in {".png", ".webp", ".jpg", ".jpeg"}]
+            if logos:
+                chosen = logos[0]  # folder has only 1 logo
+                push(f"▶ Logo: {chosen['name']}", "info")
+                downloaded = _download_drive_path(chosen["id"], cfg, tmp_dir, push)
+                if downloaded:
+                    return downloaded
+                push("⚠ Logo download failed", "warn")
+            else:
+                push(f"⚠ No image files in logo folder {folder_id}", "warn")
+        except Exception as exc:
+            push(f"⚠ Logo folder error: {exc}", "warn")
+
+    # Fallback: direct path (local file or Drive URL)
     path = body.get("logo_path", "").strip() or cfg.get("logo_path", "").strip()
     if not path:
-        folder_id = cfg.get("logo_gdrive_folder_id", "").strip()
-        if folder_id:
-            try:
-                files = list_folder_files(folder_id, credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
-                logos = [f for f in files if Path(f.get("name", "")).suffix.lower() in {".png", ".webp", ".jpg", ".jpeg"}]
-                if logos:
-                    chosen = random.choice(logos)
-                    downloaded = _download_drive_path(chosen["id"], cfg, tmp_dir, push)
-                    if downloaded:
-                        return downloaded
-            except Exception as exc:
-                push(f"⚠ Logo folder download failed: {exc}", "warn")
+        push("⚠ Logo không được cấu hình (logo_gdrive_folder_id hoặc logo_path cần được đặt)", "warn")
         return None
 
     file_path = Path(path)
@@ -90,11 +99,32 @@ def _pick_logo(body: dict, cfg: dict, tmp_dir: str, push) -> str | None:
     if downloaded:
         return downloaded
 
+    push(f"⚠ Logo path không hợp lệ: {path}", "warn")
     return None
 
 
 def _pick_music(body: dict, cfg: dict, tmp_dir: str, push) -> tuple[str | None, str | None]:
-    """Returns (file_path, file_name). Logs the chosen track."""
+    """Returns (file_path, file_name). Picks random track from configured folder."""
+    # Priority 1: Drive folder (random pick)
+    remote_folder_id = cfg.get("music_gdrive_folder_id", "").strip()
+    if remote_folder_id:
+        try:
+            push(f"▶ Fetching music list from Drive folder {remote_folder_id}...", "info")
+            files = list_folder_files(remote_folder_id, credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
+            music_files = [f for f in files if Path(f.get("name", "")).suffix.lower() in _AUDIO_EXTS]
+            if music_files:
+                chosen = random.choice(music_files)
+                push(f"♪ Music: {chosen['name']}", "info")
+                downloaded = _download_drive_path(chosen["id"], cfg, tmp_dir, push)
+                if downloaded:
+                    return downloaded, chosen["name"]
+                push("⚠ Music download failed", "warn")
+            else:
+                push(f"⚠ No audio files in music folder {remote_folder_id}", "warn")
+        except Exception as exc:
+            push(f"⚠ Drive music folder error: {exc}", "warn")
+
+    # Priority 2: Local folder
     folder = cfg.get("music_folder", "").strip()
     if folder:
         p = Path(folder)
@@ -104,23 +134,10 @@ def _pick_music(body: dict, cfg: dict, tmp_dir: str, push) -> tuple[str | None, 
                 chosen = random.choice(files)
                 push(f"♪ Music: {chosen.name}", "info")
                 return str(chosen), chosen.name
-            push("⚠ Music folder has no audio files", "warn")
+            push("⚠ Local music folder has no audio files", "warn")
 
-    remote_folder_id = cfg.get("music_gdrive_folder_id", "").strip()
-    if remote_folder_id:
-        try:
-            files = list_folder_files(remote_folder_id, credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
-            music_files = [f for f in files if Path(f.get("name", "")).suffix.lower() in _AUDIO_EXTS]
-            if music_files:
-                chosen = random.choice(music_files)
-                downloaded = _download_drive_path(chosen["id"], cfg, tmp_dir, push)
-                if downloaded:
-                    push(f"♪ Music: {chosen['name']}", "info")
-                    return downloaded, chosen["name"]
-        except Exception as exc:
-            push(f"⚠ Drive music folder download failed: {exc}", "warn")
-
-    path = body.get("music_path", "").strip()
+    # Priority 3: Direct path
+    path = body.get("music_path", "").strip() or cfg.get("music_path", "").strip()
     if path:
         file_path = Path(path)
         if file_path.is_file():
@@ -128,8 +145,8 @@ def _pick_music(body: dict, cfg: dict, tmp_dir: str, push) -> tuple[str | None, 
         downloaded = _download_drive_path(path, cfg, tmp_dir, push)
         if downloaded:
             return downloaded, Path(downloaded).name
-        return None, None
 
+    push("⚠ Nhạc không được cấu hình (music_gdrive_folder_id cần được đặt)", "warn")
     return None, None
 
 
