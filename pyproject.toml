@@ -11,6 +11,8 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "httpx",
+    "python-multipart",
+    "python-dotenv",
     "yt-dlp",
     "google-api-python-client",
     "google-auth-oauthlib",
