@@ -8,33 +8,18 @@ class ApiService {
   static String host = '127.0.0.1';
   static int port = 8000;
 
-  // ⚠️ Cập nhật URL backend từ Render tại đây (sau khi deploy)
-  // Ví dụ: https://reup-backend.onrender.com
-  static String backendUrl = ''; // Để trống = same-origin (localhost:8000)
+  static const String _railwayUrl = 'https://web-production-ba657.up.railway.app';
 
   static String get baseUrl {
-    if (kIsWeb) {
-      // Nếu có backendUrl, dùng nó. Nếu không, dùng same-origin
-      if (backendUrl.isNotEmpty) {
-        return backendUrl;
-      }
-      // Same-origin (localhost:8000 hoặc domain.com:8000)
-      return 'http://${Uri.base.host}:8000';
-    }
+    if (kIsWeb) return _railwayUrl;
     return 'http://$host:$port';
   }
 
   static String get wsBaseUrl {
     if (kIsWeb) {
-      final scheme = Uri.base.scheme == 'https' ? 'wss' : 'ws';
-      if (backendUrl.isNotEmpty) {
-        // Chuyển https:// → wss://, http:// → ws://
-        final wsUrl = backendUrl
-            .replaceFirst('https://', 'wss://')
-            .replaceFirst('http://', 'ws://');
-        return wsUrl;
-      }
-      return '$scheme://${Uri.base.authority}';
+      return _railwayUrl
+          .replaceFirst('https://', 'wss://')
+          .replaceFirst('http://', 'ws://');
     }
     return 'ws://$host:$port';
   }
