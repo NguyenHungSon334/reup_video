@@ -50,7 +50,7 @@ def process_video(
 
     filters: list[str] = []
     maps: list[str] = []
-    extra: list[str] = []
+    codec_opts: list[str] = []
 
     if logo:
         pos = _LOGO_POSITIONS.get(logo_position, "10:10")
@@ -63,21 +63,28 @@ def process_video(
         else:
             filters.append(f"[{logo_idx}:v]scale={logo_scale}:-1[wm];[0:v][wm]overlay={pos}[vout]")
         maps += ["-map", "[vout]"]
+        # Re-encode with ultrafast + minimal lookahead to avoid OOM on cloud
+        codec_opts += [
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-x264-params", "rc-lookahead=0:ref=1:bframes=0",
+            "-crf", "23",
+        ]
     else:
         maps += ["-map", "0:v"]
-        extra += ["-c:v", "copy"]
+        codec_opts += ["-c:v", "copy"]
 
     if music:
-        # Mute original video audio, replace with music at 1.5x volume
         filters.append(f"[{music_idx}:a]volume=1.5[aout]")
         maps += ["-map", "[aout]"]
+        codec_opts += ["-c:a", "aac", "-b:a", "128k"]
     else:
         maps += ["-map", "0:a"]
-        extra += ["-c:a", "copy"]
+        codec_opts += ["-c:a", "copy"]
 
     if filters:
         cmd += ["-filter_complex", ";".join(filters)]
-    cmd += maps + extra + ["-threads", "2", "-shortest", dst]
+    cmd += maps + codec_opts + ["-threads", "2", "-shortest", dst]
 
     parts = (["watermark"] if logo else []) + (["background music"] if music else [])
     log(f"▶ Adding {' + '.join(parts)}...", "info")
