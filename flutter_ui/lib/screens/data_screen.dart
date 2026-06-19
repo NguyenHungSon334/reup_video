@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import '../constants/colors.dart';
 import '../utils/open_url.dart';
 import '../models/log_entry.dart';
@@ -38,26 +40,61 @@ class _DataScreenState extends State<DataScreen> {
   final _rowStates = <String, _RowState>{};
   final _hScrollCtrl = ScrollController();
 
+  WebSocketChannel? _eventsChannel;
+  StreamSubscription<dynamic>? _eventsSub;
+
   @override
   void initState() {
     super.initState();
     _fetch();
+    _connectDataEvents();
   }
 
   @override
   void dispose() {
+    _eventsSub?.cancel();
+    _eventsChannel?.sink.close();
     _searchCtrl.dispose();
     _hScrollCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _fetch() async {
+  void _connectDataEvents() {
+    _eventsSub?.cancel();
+    _eventsChannel?.sink.close();
+    try {
+      _eventsChannel = WebSocketChannel.connect(
+          Uri.parse('${ApiService.wsBaseUrl}/ws/data-events'));
+      _eventsSub = _eventsChannel!.stream.listen(
+        (raw) {
+          if (!mounted) return;
+          final msg = jsonDecode(raw as String) as Map<String, dynamic>;
+          if (msg['type'] == 'data_changed') {
+            _fetch(refresh: true);
+          }
+        },
+        onDone: () => _scheduleReconnect(),
+        onError: (_) => _scheduleReconnect(),
+        cancelOnError: false,
+      );
+    } catch (_) {
+      _scheduleReconnect();
+    }
+  }
+
+  void _scheduleReconnect() {
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) _connectDataEvents();
+    });
+  }
+
+  Future<void> _fetch({bool refresh = false}) async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final data = await widget.api.getLarkData();
+      final data = await widget.api.getLarkData(refresh: refresh);
       if (!mounted) return;
       // Init per-row toggles from Lark values
       _logoEnabled.clear();
@@ -261,7 +298,7 @@ class _DataScreenState extends State<DataScreen> {
       final count = await widget.api.deleteRecords(ids);
       _addLog('✓ Đã xóa $count bản ghi', LogType.success);
       setState(() => _selectedIds.clear());
-      await _fetch();
+      await _fetch(refresh: true);
     } on Exception catch (e) {
       _addLog('✗ Xóa thất bại: $e', LogType.error);
     }
@@ -338,7 +375,7 @@ class _DataScreenState extends State<DataScreen> {
           videos.map((v) => {'url': v.url, 'use_music': v.useMusic}).toList();
       final ids = await widget.api.submitToLark(items);
       _addLog('✓ Đã thêm ${ids.length} bản ghi vào hàng đợi', LogType.success);
-      await _fetch();
+      await _fetch(refresh: true);
     } on Exception catch (e) {
       _addLog('✗ Gửi thất bại: $e', LogType.error);
     }

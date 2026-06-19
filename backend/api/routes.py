@@ -45,6 +45,22 @@ _LARK_CACHE_TTL = 300.0  # 5 minutes
 # Max concurrent ffmpeg jobs — 1 at a time keeps peak RAM under 512 MB
 _ffmpeg_semaphore = threading.Semaphore(1)
 
+# Real-time data-event subscribers
+_data_subscribers: set[WebSocket] = set()
+
+
+async def _broadcast_data_changed() -> None:
+    """Invalidate cache and notify all UI clients that Lark data changed."""
+    global _lark_cache_ts
+    _lark_cache_ts = 0.0
+    dead: set[WebSocket] = set()
+    for ws in list(_data_subscribers):
+        try:
+            await ws.send_json({"type": "data_changed"})
+        except Exception:
+            dead.add(ws)
+    _data_subscribers -= dead
+
 _AUDIO_EXTS = {".mp3", ".aac", ".wav", ".ogg", ".m4a", ".flac"}
 
 
@@ -320,6 +336,7 @@ async def submit_records(body: dict):
         tb = traceback.format_exc()
         print("[ERROR] /records/submit exception:\n", tb)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    await _broadcast_data_changed()
     return {"record_ids": record_ids, "count": len(record_ids)}
 
 
@@ -425,6 +442,7 @@ async def start_job(body: dict):
             shutil.rmtree(tmp, ignore_errors=True)
 
         _job_results[job_id] = result
+        asyncio.run_coroutine_threadsafe(_broadcast_data_changed(), loop)
         asyncio.run_coroutine_threadsafe(
             q.put({"type": "done", "result": result}), loop
         )
@@ -490,7 +508,24 @@ async def delete_records(body: dict):
         count = await delete_lark_records(app_id, app_secret, record_ids)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    await _broadcast_data_changed()
     return {"deleted": count}
+
+
+@router.websocket("/ws/data-events")
+async def ws_data_events(websocket: WebSocket):
+    await websocket.accept()
+    _data_subscribers.add(websocket)
+    try:
+        while True:
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "ping"})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _data_subscribers.discard(websocket)
 
 
 @router.websocket("/ws/{job_id}")
