@@ -6,6 +6,15 @@ from typing import Callable
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
+def _ffmpeg_exe() -> str:
+    """Return path to ffmpeg binary — bundled via imageio-ffmpeg or system PATH."""
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
 _LOGO_POSITIONS = {
     "top_left":     "10:10",
     "top_right":    "W-w-10:10",
@@ -29,7 +38,7 @@ def process_video(
         shutil.copy2(src, dst)
         return dst
 
-    cmd = ["ffmpeg", "-y", "-i", src]
+    cmd = [_ffmpeg_exe(), "-y", "-i", src]
     logo_idx = music_idx = None
 
     if logo:
