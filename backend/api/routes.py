@@ -42,8 +42,8 @@ _lark_cache: dict = {}
 _lark_cache_ts: float = 0.0
 _LARK_CACHE_TTL = 300.0  # 5 minutes
 
-# Max concurrent ffmpeg jobs — prevents OOM when many videos queued at once
-_ffmpeg_semaphore = threading.Semaphore(3)
+# Max concurrent ffmpeg jobs — 1 at a time keeps peak RAM under 512 MB
+_ffmpeg_semaphore = threading.Semaphore(1)
 
 _AUDIO_EXTS = {".mp3", ".aac", ".wav", ".ogg", ".m4a", ".flac"}
 
