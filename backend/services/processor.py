@@ -55,21 +55,13 @@ def process_video(
     if logo:
         pos = _LOGO_POSITIONS.get(logo_position, "10:10")
         opacity = max(0.0, min(1.0, logo_opacity))
-        # Scale input to max 720p to stay within 512 MB RAM on cloud
-        # scale=-2:'min(ih,720)' is a no-op for videos already ≤720p
-        scale_f = "[0:v]scale=-2:'min(ih,720)'[scaled]"
         if opacity < 1.0:
             filters.append(
-                f"{scale_f};"
                 f"[{logo_idx}:v]scale={logo_scale}:-1,format=rgba,colorchannelmixer=aa={opacity:.2f}[wm];"
-                f"[scaled][wm]overlay={pos}[vout]"
+                f"[0:v][wm]overlay={pos}[vout]"
             )
         else:
-            filters.append(
-                f"{scale_f};"
-                f"[{logo_idx}:v]scale={logo_scale}:-1[wm];"
-                f"[scaled][wm]overlay={pos}[vout]"
-            )
+            filters.append(f"[{logo_idx}:v]scale={logo_scale}:-1[wm];[0:v][wm]overlay={pos}[vout]")
         maps += ["-map", "[vout]"]
         codec_opts += [
             "-c:v", "libx264",
