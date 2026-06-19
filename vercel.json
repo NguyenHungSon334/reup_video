@@ -1,20 +1,15 @@
 {
-  "buildCommand": "pip install -r requirements.txt && cd flutter_ui && flutter build web --release",
+  "buildCommand": "git clone --depth 1 https://github.com/flutter/flutter.git -b stable && ./flutter/bin/flutter config --enable-web && cd flutter_ui && ../flutter/bin/flutter build web --release && cd .. && rm -rf flutter flutter_ui/.dart_tool flutter_ui/.pub-cache",
   "outputDirectory": "flutter_ui/build/web",
-  "framework": "other",
-  "functions": {
-    "backend/main.py": {
-      "runtime": "python3.9"
-    }
-  },
-  "routes": [
+  "framework": null,
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "backend/main.py"
+      "source": "/api/(.*)",
+      "destination": "/api/index"
     },
     {
-      "src": "/(.*)",
-      "dest": "flutter_ui/build/web/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
