@@ -38,7 +38,7 @@ def process_video(
         shutil.copy2(src, dst)
         return dst
 
-    cmd = [_ffmpeg_exe(), "-y", "-i", src]
+    cmd = [_ffmpeg_exe(), "-y", "-threads", "2", "-i", src]
     logo_idx = music_idx = None
 
     if logo:
@@ -77,7 +77,7 @@ def process_video(
 
     if filters:
         cmd += ["-filter_complex", ";".join(filters)]
-    cmd += maps + extra + ["-shortest", dst]
+    cmd += maps + extra + ["-threads", "2", "-shortest", dst]
 
     parts = (["watermark"] if logo else []) + (["background music"] if music else [])
     log(f"▶ Adding {' + '.join(parts)}...", "info")
