@@ -40,9 +40,9 @@ class _SourcePanelState extends State<SourcePanel> {
       badge = Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
-          color: kAccent.withOpacity(0.12),
+          color: const Color(0xFFEFF6FF),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: kAccent.withOpacity(0.25)),
+          border: Border.all(color: const Color(0xFFBFDBFE)),
         ),
         child: Text(
           '$_urlCount đường dẫn',
@@ -72,17 +72,16 @@ class _SourcePanelState extends State<SourcePanel> {
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(5),
+                borderRadius: BorderRadius.circular(9),
                 borderSide: const BorderSide(color: kBorder),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(5),
+                borderRadius: BorderRadius.circular(9),
                 borderSide: const BorderSide(color: kBorder),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(5),
-                borderSide: const BorderSide(
-                    color: Color.fromRGBO(37, 99, 235, 0.55)),
+                borderRadius: BorderRadius.circular(9),
+                borderSide: const BorderSide(color: kAccent, width: 1.5),
               ),
             ),
           ),

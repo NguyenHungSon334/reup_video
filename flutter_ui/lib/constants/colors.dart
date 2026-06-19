@@ -1,15 +1,51 @@
 import 'package:flutter/material.dart';
 
-const kBg      = Color(0xFF09090F);
-const kSidebar = Color(0xFF0E0E17);
-const kCard    = Color(0xFF131320);
-const kBorder  = Color(0xFF1E1E2C);
-const kInputBg = Color(0xFF0B0B14);
+// ── Backgrounds ───────────────────────────────────────────────────────────────
+const kBg      = Color(0xFFF1F5F9);
+const kSidebar = Color(0xFFFFFFFF);
+const kCard    = Color(0xFFFFFFFF);
+const kLogBg   = Color(0xFFF8FAFC);
+
+// ── Borders & inputs ──────────────────────────────────────────────────────────
+const kBorder  = Color(0xFFE2E8F0);
+const kInputBg = Color(0xFFF8FAFC);
+
+// ── Accent ────────────────────────────────────────────────────────────────────
 const kAccent  = Color(0xFF2563EB);
-const kText    = Color(0xFFE2E8F0);
-const kTextDim = Color(0xFF8892A4);
-const kMuted   = Color(0xFF4B5568);
-const kLogBg   = Color(0xFF07070D);
-const kGreen   = Color(0xFF22C55E);
-const kRed     = Color(0xFFEF4444);
-const kAmber   = Color(0xFFF59E0B);
+
+// ── Text ──────────────────────────────────────────────────────────────────────
+const kText    = Color(0xFF0F172A);
+const kTextDim = Color(0xFF64748B);
+const kMuted   = Color(0xFF94A3B8);
+
+// ── Status ────────────────────────────────────────────────────────────────────
+const kGreen   = Color(0xFF16A34A);
+const kRed     = Color(0xFFDC2626);
+const kAmber   = Color(0xFFD97706);
+
+// ── Shadow helper ─────────────────────────────────────────────────────────────
+const kShadow = [
+  BoxShadow(
+    color: Color(0x0A000000),
+    blurRadius: 12,
+    offset: Offset(0, 2),
+  ),
+  BoxShadow(
+    color: Color(0x06000000),
+    blurRadius: 4,
+    offset: Offset(0, 1),
+  ),
+];
+
+const kShadowMd = [
+  BoxShadow(
+    color: Color(0x10000000),
+    blurRadius: 20,
+    offset: Offset(0, 4),
+  ),
+  BoxShadow(
+    color: Color(0x06000000),
+    blurRadius: 6,
+    offset: Offset(0, 1),
+  ),
+];

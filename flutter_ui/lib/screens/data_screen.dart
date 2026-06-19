@@ -229,7 +229,7 @@ class _DataScreenState extends State<DataScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kCard,
+        backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         title: const Text('Xác nhận xóa',
             style: TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w700)),
@@ -272,7 +272,7 @@ class _DataScreenState extends State<DataScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kCard,
+        backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         title: const Text('Thêm URL vào hàng đợi',
             style: TextStyle(
@@ -350,29 +350,38 @@ class _DataScreenState extends State<DataScreen> {
       children: [
         // ── Header ──────────────────────────────────────────────────────────
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           decoration: const BoxDecoration(
+            color: kSidebar,
             border: Border(bottom: BorderSide(color: kBorder)),
           ),
           child: Row(
             children: [
-              const Icon(Icons.dataset_outlined, size: 18, color: kAccent),
-              const SizedBox(width: 10),
-              const Text('Dữ liệu Lark',
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(Icons.view_list_rounded, size: 18, color: kAccent),
+              ),
+              const SizedBox(width: 12),
+              const Text('Hàng Đợi',
                   style: TextStyle(
-                      color: kText, fontSize: 16, fontWeight: FontWeight.w700)),
+                      color: kText, fontSize: 16, fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2)),
               if (_data != null) ...[
                 const SizedBox(width: 10),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                   decoration: BoxDecoration(
-                    color: kAccent.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: kAccent.withOpacity(0.25)),
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
                   ),
                   child: Text(
-                    '${_filtered.length} / ${_data!.total} hàng',
+                    '${_filtered.length} / ${_data!.total}',
                     style: const TextStyle(
                         color: kAccent,
                         fontSize: 10.5,
@@ -383,33 +392,32 @@ class _DataScreenState extends State<DataScreen> {
               const Spacer(),
               // Search
               SizedBox(
-                width: 200,
+                width: 220,
                 child: TextField(
                   controller: _searchCtrl,
                   onChanged: (v) => setState(() => _search = v),
-                  style: const TextStyle(color: kText, fontSize: 12),
+                  style: const TextStyle(color: kText, fontSize: 12.5),
                   decoration: InputDecoration(
                     hintText: 'Tìm kiếm...',
-                    hintStyle: const TextStyle(color: kMuted, fontSize: 12),
+                    hintStyle: const TextStyle(color: kMuted, fontSize: 12.5),
                     prefixIcon: const Icon(Icons.search_rounded,
                         size: 16, color: kMuted),
                     filled: true,
                     fillColor: kInputBg,
                     isDense: true,
                     contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(5),
+                      borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: kBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(5),
+                      borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: kBorder),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(5),
-                      borderSide: const BorderSide(
-                          color: Color.fromRGBO(37, 99, 235, 0.55)),
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: kAccent, width: 1.5),
                     ),
                   ),
                 ),
@@ -421,14 +429,14 @@ class _DataScreenState extends State<DataScreen> {
                 child: OutlinedButton.icon(
                   onPressed: _processing ? null : _showSubmitDialog,
                   icon: const Icon(Icons.add_rounded, size: 15),
-                  label: const Text('Thêm URL', style: TextStyle(fontSize: 12)),
+                  label: const Text('Thêm URL', style: TextStyle(fontSize: 12.5)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: kAccent,
-                    side: BorderSide(color: kAccent.withOpacity(0.5)),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    side: const BorderSide(color: Color(0xFFBFDBFE)),
+                    backgroundColor: const Color(0xFFEFF6FF),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5)),
+                        borderRadius: BorderRadius.circular(9)),
                   ),
                 ),
               ),
@@ -441,15 +449,15 @@ class _DataScreenState extends State<DataScreen> {
                     icon: const Icon(Icons.delete_outline_rounded, size: 15),
                     label: Text(
                       'Xóa ${_selectedIds.length}',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: kRed,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor: kRed.withOpacity(0.35),
+                      disabledBackgroundColor: const Color(0xFFEF444466),
                       disabledForegroundColor: Colors.white54,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
                       elevation: 0,
                     ),
                   ),
@@ -467,7 +475,7 @@ class _DataScreenState extends State<DataScreen> {
                           height: 13,
                           child: CircularProgressIndicator(
                               strokeWidth: 1.5, color: Colors.white))
-                      : const Icon(Icons.play_arrow_rounded, size: 15),
+                      : const Icon(Icons.play_arrow_rounded, size: 16),
                   label: Text(
                     _processing
                         ? 'Đang xử lý...'
@@ -475,17 +483,16 @@ class _DataScreenState extends State<DataScreen> {
                             ? 'Xử lý'
                             : 'Xử lý ${_selectedIds.length}',
                     style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600),
+                        fontSize: 12.5, fontWeight: FontWeight.w600),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kAccent,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: kAccent.withOpacity(0.35),
+                    disabledBackgroundColor: const Color(0xFF2563EB55),
                     disabledForegroundColor: Colors.white54,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5)),
+                        borderRadius: BorderRadius.circular(9)),
                     elevation: 0,
                   ),
                 ),
@@ -497,16 +504,16 @@ class _DataScreenState extends State<DataScreen> {
                         width: 13,
                         height: 13,
                         child: CircularProgressIndicator(
-                            strokeWidth: 1.5, color: kTextDim))
+                            strokeWidth: 1.5, color: kMuted))
                     : const Icon(Icons.refresh_rounded, size: 15),
-                label: const Text('Làm mới', style: TextStyle(fontSize: 12)),
+                label: const Text('Làm mới', style: TextStyle(fontSize: 12.5)),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: kTextDim,
                   side: const BorderSide(color: kBorder),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  backgroundColor: kInputBg,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5)),
+                      borderRadius: BorderRadius.circular(9)),
                 ),
               ),
             ],
@@ -578,7 +585,7 @@ class _DataScreenState extends State<DataScreen> {
                   backgroundColor: kAccent,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5)),
+                      borderRadius: BorderRadius.circular(9)),
                   elevation: 0,
                 ),
               ),
@@ -677,7 +684,7 @@ class _DataTable extends StatelessWidget {
       children: [
         // Header
         TableRow(
-          decoration: const BoxDecoration(color: kCard),
+          decoration: const BoxDecoration(color: Color(0xFFF8FAFC)),
           children: [
             _CheckCell(
               value: allSelected,
@@ -696,10 +703,10 @@ class _DataTable extends StatelessWidget {
           TableRow(
             decoration: BoxDecoration(
               color: selectedIds.contains(rows[i]['_record_id'])
-                  ? kAccent.withOpacity(0.07)
+                  ? const Color(0xFFEFF6FF)
                   : i.isEven
-                      ? const Color(0xFF0D0D1A)
-                      : const Color(0xFF0B0B16),
+                      ? Colors.white
+                      : const Color(0xFFFAFAFC),
             ),
             children: [
               _CheckCell(
@@ -910,7 +917,7 @@ class _DataCell extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 6),
                     decoration: BoxDecoration(
-                      color: kAccent.withOpacity(0.08),
+                      color: const Color(0xFFEFF6FF),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Row(

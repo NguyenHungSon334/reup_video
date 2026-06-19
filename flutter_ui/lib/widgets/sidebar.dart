@@ -9,56 +9,99 @@ class Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 136,
-      color: kSidebar,
+      width: 200,
+      decoration: const BoxDecoration(
+        color: kSidebar,
+        border: Border(right: BorderSide(color: kBorder)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Logo area ──────────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+            child: Row(
               children: [
-                const Text(
-                  'Tự Động\nHóa Video',
-                  style: TextStyle(
-                    color: kText, fontSize: 12.5,
-                    fontWeight: FontWeight.w700, height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  width: 34,
+                  height: 34,
                   decoration: BoxDecoration(
-                    color: Color.fromRGBO(37, 99, 235, 0.15),
-                    borderRadius: BorderRadius.circular(3),
-                    border: Border.all(color: Color.fromRGBO(37, 99, 235, 0.3)),
+                    color: kAccent,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x402563EB),
+                        blurRadius: 12,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
                   ),
-                  child: const Text(
-                    'V2.4.0 ỔN ĐỊNH',
-                    style: TextStyle(
-                      color: kAccent, fontSize: 8.5,
-                      fontWeight: FontWeight.w700, letterSpacing: 0.5,
-                    ),
+                  child: const Icon(Icons.play_arrow_rounded,
+                      color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ReupPro',
+                        style: TextStyle(
+                          color: kText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      Text(
+                        'v2.4.0',
+                        style: TextStyle(
+                          color: kMuted,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          Container(height: 1, color: kBorder),
-          const SizedBox(height: 4),
-          NavItem(icon: Icons.dataset_outlined, label: 'Hàng Đợi', idx: 1, cur: navIdx, onTap: onNav),
+
+          // ── Divider ────────────────────────────────────────────────────────
+          Container(height: 1, color: kBorder, margin: const EdgeInsets.symmetric(horizontal: 16)),
+          const SizedBox(height: 8),
+
+          // ── Label ──────────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: Text(
+              'MENU',
+              style: TextStyle(
+                color: kMuted,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+
+          NavItem(icon: Icons.view_list_rounded, label: 'Hàng Đợi', idx: 1, cur: navIdx, onTap: onNav),
+
           const Spacer(),
-          Container(height: 1, color: kBorder),
-          NavItem(icon: Icons.settings_outlined, label: 'Cài Đặt', idx: 99, cur: navIdx, onTap: onNav),
-          const SizedBox(height: 6),
+
+          Container(height: 1, color: kBorder, margin: const EdgeInsets.symmetric(horizontal: 16)),
+          const SizedBox(height: 8),
+
+          NavItem(icon: Icons.tune_rounded, label: 'Cài Đặt', idx: 99, cur: navIdx, onTap: onNav),
+          const SizedBox(height: 12),
         ],
       ),
     );
   }
 }
 
-class NavItem extends StatelessWidget {
+class NavItem extends StatefulWidget {
   final IconData icon;
   final String label;
   final int idx;
@@ -73,39 +116,53 @@ class NavItem extends StatelessWidget {
     required this.onTap,
   });
 
-  bool get _active => idx == cur;
+  @override
+  State<NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<NavItem> {
+  bool _hovered = false;
+  bool get _active => widget.idx == widget.cur;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => onTap(idx),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: _active
-              ? Color.fromRGBO(37, 99, 235, 0.12)
-              : Colors.transparent,
-          border: Border(
-            left: BorderSide(
-              color: _active ? kAccent : Colors.transparent,
-              width: 2.5,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: () => widget.onTap(widget.idx),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: _active
+                  ? kAccent
+                  : _hovered
+                      ? const Color(0xFFF1F5F9)
+                      : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  widget.icon,
+                  size: 16,
+                  color: _active ? Colors.white : (_hovered ? kAccent : kTextDim),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    color: _active ? Colors.white : (_hovered ? kText : kTextDim),
+                    fontSize: 13,
+                    fontWeight: _active ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 15, color: _active ? kAccent : kTextDim),
-            const SizedBox(width: 9),
-            Text(
-              label,
-              style: TextStyle(
-                color: _active ? kText : kTextDim,
-                fontSize: 12,
-                fontWeight: _active ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          ],
         ),
       ),
     );

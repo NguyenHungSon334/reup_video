@@ -10,20 +10,31 @@ class ReupApp extends StatelessWidget {
     return MaterialApp(
       title: 'Douyin Reup Pro',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
+      theme: ThemeData.light().copyWith(
         scaffoldBackgroundColor: kBg,
-        colorScheme: const ColorScheme.dark(primary: kAccent, surface: kCard),
+        colorScheme: const ColorScheme.light(
+          primary: kAccent,
+          surface: kCard,
+          onSurface: kText,
+        ),
+        textTheme: ThemeData.light().textTheme.apply(
+          bodyColor: kText,
+          displayColor: kText,
+        ),
         switchTheme: SwitchThemeData(
           trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
           thumbColor: WidgetStateProperty.resolveWith((s) =>
-              s.contains(WidgetState.selected) ? Colors.white : kTextDim),
+              s.contains(WidgetState.selected) ? Colors.white : Colors.white),
           trackColor: WidgetStateProperty.resolveWith((s) =>
-              s.contains(WidgetState.selected) ? kAccent : kBorder),
+              s.contains(WidgetState.selected) ? kAccent : kMuted),
         ),
         scrollbarTheme: ScrollbarThemeData(
-          thumbColor: WidgetStateProperty.all(kBorder),
+          thumbColor: WidgetStateProperty.all(const Color(0xFFCBD5E1)),
           trackColor: WidgetStateProperty.all(Colors.transparent),
+          radius: const Radius.circular(8),
         ),
+        dividerColor: kBorder,
+        dialogTheme: const DialogThemeData(backgroundColor: Colors.white),
       ),
       home: const AppShell(),
     );

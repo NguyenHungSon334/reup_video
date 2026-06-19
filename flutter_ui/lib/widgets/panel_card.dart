@@ -17,21 +17,24 @@ class PanelCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: kCard,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: kBorder),
+        boxShadow: kShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 10),
             child: Row(
               children: [
                 Text(
                   title,
                   style: const TextStyle(
-                    color: kMuted, fontSize: 10,
-                    fontWeight: FontWeight.w700, letterSpacing: 1.1,
+                    color: kMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
                   ),
                 ),
                 const Spacer(),
@@ -67,36 +70,35 @@ class DarkInput extends StatelessWidget {
       onChanged: onChanged,
       readOnly: readOnly,
       style: TextStyle(
-        color: readOnly ? kTextDim : kText,
-        fontSize: 12,
+        color: readOnly ? kMuted : kText,
+        fontSize: 12.5,
         fontFamily: readOnly ? 'monospace' : null,
       ),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: kMuted, fontSize: 12),
+        hintStyle: const TextStyle(color: kMuted, fontSize: 12.5),
         filled: true,
-        fillColor: readOnly ? const Color(0xFF0A0A12) : kInputBg,
+        fillColor: readOnly ? const Color(0xFFF8FAFC) : kInputBg,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
         suffixIcon: readOnly
             ? const Icon(Icons.lock_outline_rounded, size: 13, color: kMuted)
             : null,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(9),
           borderSide: const BorderSide(color: kBorder),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(9),
           borderSide: BorderSide(
-            color: readOnly ? const Color(0xFF161625) : kBorder,
+            color: readOnly ? kBorder : kBorder,
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(9),
           borderSide: BorderSide(
-            color: readOnly
-                ? const Color(0xFF161625)
-                : const Color.fromRGBO(37, 99, 235, 0.55),
+            color: readOnly ? kBorder : kAccent,
+            width: 1.5,
           ),
         ),
       ),
