@@ -26,6 +26,9 @@ class _HomeScreenState extends State<HomeScreen> {
   int _destTab = 0;
   bool _running = false;
   double _progress = 0;
+  double _logPanelHeight = 260.0;
+  static const double _minLogHeight = 80.0;
+  static const double _maxLogHeight = 700.0;
   String _logoPath = '';
   String _musicPath = '';
   String _reupDriveId = '';
@@ -221,33 +224,54 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _onLogDrag(DragUpdateDetails details) {
+    setState(() {
+      _logPanelHeight =
+          (_logPanelHeight - details.delta.dy).clamp(_minLogHeight, _maxLogHeight);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                width: 456,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      SourcePanel(ctrl: _urlCtrl),
-                    ],
-                  ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                SourcePanel(ctrl: _urlCtrl),
+              ],
+            ),
+          ),
+        ),
+        // ── Drag handle ────────────────────────────────────────────
+        GestureDetector(
+          onVerticalDragUpdate: _onLogDrag,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.resizeRow,
+            child: Container(
+              height: 8,
+              color: const Color(0xFF1E1E2C),
+              alignment: Alignment.center,
+              child: Container(
+                width: 48,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4B5568),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Expanded(
-                child: LogPanel(
-                  logs: _logs,
-                  progress: _progress,
-                  running: _running,
-                ),
-              ),
-            ],
+            ),
+          ),
+        ),
+        // ── Log panel (resizable height) ───────────────────────────
+        SizedBox(
+          height: _logPanelHeight,
+          child: LogPanel(
+            logs: _logs,
+            progress: _progress,
+            running: _running,
           ),
         ),
         BottomBar(
