@@ -92,6 +92,14 @@ async def _intercept_video_url(video_page_url: str, log: Callable, timeout_ms: i
         page = await ctx.new_page()
         page.on("request", on_request)
 
+        # Pre-visit homepage to get fresh session cookies (required by Douyin)
+        log("  Pre-visiting douyin.com to get session cookies...", "info")
+        try:
+            await page.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=15_000)
+            await page.wait_for_timeout(2000)
+        except Exception:
+            pass
+
         log(f"  Navigating: {video_page_url}", "info")
         try:
             await page.goto(video_page_url, wait_until="networkidle", timeout=timeout_ms)
