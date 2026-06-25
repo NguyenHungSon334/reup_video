@@ -10,13 +10,18 @@ import signal
 if getattr(sys, 'frozen', False):
     sys.path.insert(0, sys._MEIPASS)
     _EXE_DIR = os.path.dirname(sys.executable)
-    _LOG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "ReupVideo")
+    if sys.platform == "darwin":
+        _LOG_DIR = os.path.join(os.path.expanduser("~/Library/Application Support"), "ReupVideo")
+        # macOS COLLECT mode: pw_browsers sits next to the executable
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(_EXE_DIR, "pw_browsers")
+    else:
+        _LOG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "ReupVideo")
+        # Windows single-file: pw_browsers extracted into _MEIPASS
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(sys._MEIPASS, "pw_browsers")
     os.makedirs(_LOG_DIR, exist_ok=True)
     _log = open(os.path.join(_LOG_DIR, "backend.log"), "w", encoding="utf-8", buffering=1)
     sys.stdout = _log
     sys.stderr = _log
-    # Playwright browsers bundled inside _MEIPASS/pw_browsers
-    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(sys._MEIPASS, "pw_browsers")
 else:
     _EXE_DIR = os.path.dirname(os.path.abspath(__file__))
     os.environ.setdefault(
