@@ -6,10 +6,24 @@ import re
 from pathlib import Path
 from typing import Callable
 
+import base64
+
 _BASE = Path(__file__).parent.parent
 TOKEN_FILE = _BASE / "token.json"
 CREDENTIALS_FILE = Path(__file__).parent / "credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+_CREDS_B64 = (
+    "eyJpbnN0YWxsZWQiOnsiY2xpZW50X2lkIjoiOTY0MjUwNTE1MjA1LWlqOTJtMnZpZGkyM2Rx"
+    "ZHMyNTVnNDJ1dWZkcWRpaTE2LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tIiwicHJvamVj"
+    "dF9pZCI6Im1ldG9yeS1hOWQ4MyIsImF1dGhfdXJpIjoiaHR0cHM6Ly9hY2NvdW50cy5nb29n"
+    "bGUuY29tL28vb2F1dGgyL2F1dGgiLCJ0b2tlbl91cmkiOiJodHRwczovL29hdXRoMi5nb29n"
+    "bGVhcGlzLmNvbS90b2tlbiIsImF1dGhfcHJvdmlkZXJfeDUwOV9jZXJ0X3VybCI6Imh0dHBz"
+    "Oi8vd3d3Lmdvb2dsZWFwaXMuY29tL29hdXRoMi92MS9jZXJ0cyIsImNsaWVudF9zZWNyZXQi"
+    "OiJHT0NTUFgtVl9UUy1GLTNQVXNYbXZ6R3RaVkhpLTJaeDhtbiIsInJlZGlyZWN0X3VyaXMi"
+    "OlsiaHR0cDovL2xvY2FsaG9zdCJdfX0="
+)
+_HARDCODED_CREDS = json.loads(base64.b64decode(_CREDS_B64).decode())
 
 
 def _bootstrap_from_env() -> None:
@@ -56,14 +70,6 @@ def _gdrive_service(credentials_path: str | None = None):
     _bootstrap_from_env()
 
     cred_file = Path(credentials_path).expanduser() if credentials_path else CREDENTIALS_FILE
-    if not cred_file.exists():
-        tmp_cred = Path("/tmp/credentials.json")
-        if tmp_cred.exists():
-            cred_file = tmp_cred
-    if not cred_file.exists():
-        raise FileNotFoundError(
-            f"credentials.json not found at {cred_file}"
-        )
 
     creds = None
     token_path = TOKEN_FILE if TOKEN_FILE.exists() else Path("/tmp/token.json")
@@ -74,7 +80,10 @@ def _gdrive_service(credentials_path: str | None = None):
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(cred_file), SCOPES)
+            if cred_file.exists():
+                flow = InstalledAppFlow.from_client_secrets_file(str(cred_file), SCOPES)
+            else:
+                flow = InstalledAppFlow.from_client_config(_HARDCODED_CREDS, SCOPES)
             creds = flow.run_local_server(port=0)
 
         save_path = TOKEN_FILE if os.access(TOKEN_FILE.parent, os.W_OK) else Path("/tmp/token.json")
