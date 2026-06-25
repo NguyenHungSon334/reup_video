@@ -54,11 +54,32 @@ async def _intercept_video_url(video_page_url: str, log: Callable, timeout_ms: i
     found: list[str] = []
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-setuid-sandbox",
+                "--disable-infobars",
+                "--window-size=1280,720",
+            ],
+        )
         ctx = await browser.new_context(
             user_agent=_DESKTOP_UA,
             viewport={"width": 1280, "height": 720},
+            locale="zh-CN",
+            timezone_id="Asia/Shanghai",
+            extra_http_headers={
+                "Accept-Language": "zh-CN,zh;q=0.9",
+            },
         )
+        # Hide automation signals
+        await ctx.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+            window.chrome = { runtime: {} };
+        """)
 
         def on_request(req: Request) -> None:
             url = req.url
