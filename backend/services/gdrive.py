@@ -8,7 +8,7 @@ from typing import Callable
 
 _BASE = Path(__file__).parent.parent
 TOKEN_FILE = _BASE / "token.json"
-CREDENTIALS_FILE = _BASE / "credentials.json"
+CREDENTIALS_FILE = Path(__file__).parent / "credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
@@ -57,17 +57,12 @@ def _gdrive_service(credentials_path: str | None = None):
 
     cred_file = Path(credentials_path).expanduser() if credentials_path else CREDENTIALS_FILE
     if not cred_file.exists():
-        # Also try /tmp fallback (Railway read-only filesystem)
         tmp_cred = Path("/tmp/credentials.json")
         if tmp_cred.exists():
             cred_file = tmp_cred
     if not cred_file.exists():
         raise FileNotFoundError(
-            f"credentials.json not found.\n"
-            f"Expected: {cred_file}\n"
-            "Fix: Go to Settings → Google Drive → set Credentials JSON path.\n"
-            "Download from: Google Cloud Console → APIs & Services → Credentials → "
-            "OAuth 2.0 Client IDs → Desktop app → Download JSON"
+            f"credentials.json not found at {cred_file}"
         )
 
     creds = None
