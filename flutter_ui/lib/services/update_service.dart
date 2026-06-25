@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class UpdateService {
-  static const String currentVersion = '1.0.0';
+  static const String currentVersion = '2.0.6';
   static const String _githubApi =
       'https://api.github.com/repos/NguyenHungSon334/reup_video/releases/latest';
 

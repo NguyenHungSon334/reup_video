@@ -54,7 +54,7 @@ jobs:
       - uses: actions/upload-artifact@v4.4.3
         with:
           name: ReupVideo-Windows-Installer
-          path: dist\installer\Setup_ReupVideo_1.0.0.exe
+          path: dist\installer\Setup_ReupVideo_2.0.6.exe
 
   # ── macOS: backend + Flutter macOS app + DMG ────────────────────────────
   build-macos:
@@ -112,13 +112,13 @@ jobs:
             --icon "reup_flutter.app" 160 190 \
             --hide-extension "reup_flutter.app" \
             --app-drop-link 480 190 \
-            "dist/installer_mac/ReupVideo_mac_1.0.0.dmg" \
+            "dist/installer_mac/ReupVideo_mac_2.0.6.dmg" \
             "dist/dmg_staging/ReupVideo"
 
       - uses: actions/upload-artifact@v4.4.3
         with:
           name: ReupVideo-macOS-DMG
-          path: dist/installer_mac/ReupVideo_mac_1.0.0.dmg
+          path: dist/installer_mac/ReupVideo_mac_2.0.6.dmg
 
   # ── GitHub Release ───────────────────────────────────────────────────────
   release:
@@ -137,6 +137,6 @@ jobs:
       - uses: softprops/action-gh-release@v2.1.0
         with:
           files: |
-            artifacts/Setup_ReupVideo_1.0.0.exe
-            artifacts/ReupVideo_mac_1.0.0.dmg
+            artifacts/Setup_ReupVideo_2.0.6.exe
+            artifacts/ReupVideo_mac_2.0.6.dmg
           generate_release_notes: true

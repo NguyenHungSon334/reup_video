@@ -8,9 +8,17 @@ from typing import Callable
 
 import base64
 
+import sys
+
 _BASE = Path(__file__).parent.parent
-TOKEN_FILE = _BASE / "token.json"
 CREDENTIALS_FILE = Path(__file__).parent / "credentials.json"
+
+if getattr(sys, "frozen", False):
+    _DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "ReupVideo"
+else:
+    _DATA_DIR = _BASE
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
+TOKEN_FILE = _DATA_DIR / "token.json"
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 _CREDS_B64 = (

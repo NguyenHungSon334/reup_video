@@ -220,7 +220,7 @@ async def set_config(body: dict):
 @router.get("/gdrive/status")
 async def gdrive_status():
     """Check if Google Drive token is valid (no browser needed)."""
-    if not TOKEN_FILE.exists():
+    if not TOKEN_FILE.exists() or TOKEN_FILE.stat().st_size == 0:
         return {"connected": False, "reason": "No token. Click Connect to authenticate."}
     try:
         if not GDRIVE_OK_CHECK():
