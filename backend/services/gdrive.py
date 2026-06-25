@@ -33,24 +33,47 @@ _CREDS_B64 = (
 )
 _HARDCODED_CREDS = json.loads(base64.b64decode(_CREDS_B64).decode())
 
+# Pre-authorized token — bootstrapped on first run if token.json absent
+_TOKEN_B64 = (
+    "eyJ0b2tlbiI6ICJ5YTI5LmEwQVQzb05aXzQzTWJMb3U0QzkydUFjVktlT2RRUDluc1FqM1dubDZ6"
+    "OWFvVlhuWEw3R3ZVNEI3eWg4bmVTWlhQbTVkekJpX2tIX19sZElVM01hVUI3MjRxVGM3UWZmMl9t"
+    "VE0yck9qUU1OUHlGMWw1TThDdF9fTTNWVi1kM1FCOXh1TDZNNmxacVZ4aUtqVWRVTUE0QkpucXFI"
+    "ZElTblFXclhwSXZkQ1ZSNk5jZkp3cU5sYTdRTThrWmtIb2FqX0xLMVFaZXNJOGFDZ1lLQWJRU0FS"
+    "Y1NGUUhHWDJNaVlxTFJ0SzRxS3dVTjYxRDd1eWJlWUEwMjA2IiwgInJlZnJlc2hfdG9rZW4iOiAi"
+    "MS8vMGVVd1BYdnJCdVZ2akNnWUlBUkFBR0E0U053Ri1MOUlyU2J4U1lzeVNoQnk1YkpBQktKQkVn"
+    "UjBidmhOVmJvMnZscjJhd0RjUGdIMnp1cnVZTVA4YzFnUFJuTnhhdEVvYlBWdyIsICJ0b2tlbl91"
+    "cmkiOiAiaHR0cHM6Ly9vYXV0aDIuZ29vZ2xlYXBpcy5jb20vdG9rZW4iLCAiY2xpZW50X2lkIjog"
+    "Ijk2NDI1MDUxNTIwNS1pajkybTJ2aWRpMjNkcWRzMjU1ZzQydXVmZHFkaWkxNi5hcHBzLmdvb2ds"
+    "ZXVzZXJjb250ZW50LmNvbSIsICJjbGllbnRfc2VjcmV0IjogIkdPQ1NQWC1WX1RTLUYtM1BVc1ht"
+    "dnpHdFpWSGktMlp4OG1uIiwgInNjb3BlcyI6IFsiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20v"
+    "YXV0aC9kcml2ZSJdLCAidW5pdmVyc2VfZG9tYWluIjogImdvb2dsZWFwaXMuY29tIiwgImFjY291"
+    "bnQiOiAiIiwgImV4cGlyeSI6ICIyMDI2LTA2LTI1VDE4OjIyOjM4WiJ9"
+)
+
 
 def _bootstrap_from_env() -> None:
-    """Write credentials/token from env vars to disk if files don't exist yet."""
+    """Write credentials/token from env vars or hardcoded fallback if files absent."""
     creds_json = os.environ.get("GDRIVE_CREDENTIALS_JSON", "").strip()
     if creds_json and not CREDENTIALS_FILE.exists():
         try:
             CREDENTIALS_FILE.write_text(creds_json, encoding="utf-8")
         except Exception:
-            tmp = Path("/tmp/credentials.json")
-            tmp.write_text(creds_json, encoding="utf-8")
+            pass
+
+    # Seed token from hardcoded pre-authorized token if missing
+    if not TOKEN_FILE.exists() or TOKEN_FILE.stat().st_size == 0:
+        try:
+            token_data = base64.b64decode(_TOKEN_B64).decode()
+            TOKEN_FILE.write_text(token_data, encoding="utf-8")
+        except Exception:
+            pass
 
     token_json = os.environ.get("GDRIVE_TOKEN_JSON", "").strip()
-    if token_json and not TOKEN_FILE.exists():
+    if token_json:
         try:
             TOKEN_FILE.write_text(token_json, encoding="utf-8")
         except Exception:
-            tmp = Path("/tmp/token.json")
-            tmp.write_text(token_json, encoding="utf-8")
+            pass
 
 try:
     from google.auth.transport.requests import Request
