@@ -26,6 +26,7 @@ os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _BROWSERS_DIR
 
 BACKEND_PORT = 8765
 
+import socket
 import subprocess
 import threading
 import time
@@ -102,6 +103,23 @@ def _install_playwright(ui: _SetupWindow):
 
 # ── Flutter UI launcher ────────────────────────────────────────────────────
 
+def _backend_ready(timeout: int = 60) -> bool:
+    """Poll until the backend TCP port accepts connections."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", BACKEND_PORT), timeout=1):
+                return True
+        except OSError:
+            time.sleep(0.5)
+    return False
+
+
+def _wait_then_launch():
+    if _backend_ready():
+        _launch_flutter()
+
+
 def _launch_flutter():
     """Find and launch the Flutter desktop exe sitting next to this backend."""
     candidates = [
@@ -133,8 +151,8 @@ def main():
             time.sleep(0.05)
         ui.close()
 
-    # Launch Flutter UI after backend starts
-    threading.Timer(2.0, _launch_flutter).start()
+    # Launch Flutter UI only after backend is actually ready
+    threading.Thread(target=_wait_then_launch, daemon=True).start()
 
     os.environ["PORT"] = str(BACKEND_PORT)
     import uvicorn
