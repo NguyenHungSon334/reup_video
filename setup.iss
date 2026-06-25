@@ -33,7 +33,7 @@ ShowLanguageDialog=no
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Tạo shortcut trên Desktop"; GroupDescription: "Shortcut:"; Flags: checked
+Name: "desktopicon"; Description: "Tao shortcut tren Desktop"; GroupDescription: "Shortcut:"
 
 [Files]
 ; Backend (PyInstaller single exe)
