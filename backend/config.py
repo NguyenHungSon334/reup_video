@@ -22,6 +22,7 @@ _DEFAULTS: dict[str, Any] = {
     "lark_field_music":          "Nhạc",
     "lark_field_music_name":     "Tên Nhạc",
     "lark_field_status":         "Status",
+    "lark_field_kenh":           "Kênh",
     # ── Google Drive (fixed) ──────────────────────────────────────────────────
     "gdrive_folder_id":          "1sCqlg4vQs2TlaiqlFUdrg9uAP7pQwxeh",
     "reup_gdrive_folder_id":     "1Oi3Rx1_nMfOIMh-L8iiJ1Z2d34YKJMxy",
@@ -57,6 +58,7 @@ _ENV_MAP = {
     "LARK_FIELD_MUSIC":         "lark_field_music",
     "LARK_FIELD_MUSIC_NAME":    "lark_field_music_name",
     "LARK_FIELD_STATUS":        "lark_field_status",
+    "LARK_FIELD_KENH":          "lark_field_kenh",
 }
 
 

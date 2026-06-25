@@ -64,6 +64,15 @@ class ApiService {
 
   // ── Lark ──────────────────────────────────────────────────────────────────
 
+  Future<List<String>> getKenhOptions() async {
+    final res = await http
+        .get(Uri.parse('${ApiService.baseUrl}/lark/kenh-options'))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) return [];
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return (data['options'] as List).cast<String>();
+  }
+
   Future<List<String>> submitToLark(List<Map<String, dynamic>> items) async {
     final res = await http
         .post(

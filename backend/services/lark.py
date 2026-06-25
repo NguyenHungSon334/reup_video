@@ -123,6 +123,26 @@ async def get_field_names(app_id: str, app_secret: str) -> list[dict]:
         ]
 
 
+async def get_field_options(app_id: str, app_secret: str, field_name: str) -> list[str]:
+    """Return option names for a single-select field."""
+    token   = await _get_token(app_id, app_secret)
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{LARK_BASE}/bitable/v1/apps/{BITABLE_APP_TOKEN}/tables/{TABLE_ID}/fields",
+            headers=headers,
+            timeout=10.0,
+        )
+        data = res.json()
+        if data.get("code") != 0:
+            raise RuntimeError(f"Lark fields error: {data.get('msg')}")
+        for f in (data.get("data") or {}).get("items") or []:
+            if f["field_name"] == field_name:
+                opts = (f.get("property") or {}).get("options") or []
+                return [o["name"] for o in opts]
+    return []
+
+
 async def create_lark_records(
     app_id: str,
     app_secret: str,
@@ -135,9 +155,10 @@ async def create_lark_records(
     {"link": "Video URL", "music": "Nhạc", "status": "Trạng thái"}
     """
     fm = {
-        "link":       (field_map or {}).get("link",       F_LINK),
-        "music":      (field_map or {}).get("music",      F_MUSIC),
-        "status":     (field_map or {}).get("status",     F_STATUS),
+        "link":   (field_map or {}).get("link",   F_LINK),
+        "music":  (field_map or {}).get("music",  F_MUSIC),
+        "status": (field_map or {}).get("status", F_STATUS),
+        "kenh":   (field_map or {}).get("kenh",   "Kênh"),
     }
 
     token   = await _get_token(app_id, app_secret)
@@ -166,6 +187,8 @@ async def create_lark_records(
                 fields[fm["music"]] = item.get("use_music")
             if fm["status"] in available:
                 fields[fm["status"]] = "Chờ xử lý"
+            if item.get("kenh") and fm["kenh"] in available:
+                fields[fm["kenh"]] = item["kenh"]
             records_payload.append({"fields": fields})
 
         res = await client.post(

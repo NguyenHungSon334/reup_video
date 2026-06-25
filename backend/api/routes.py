@@ -327,6 +327,23 @@ async def get_lark_fields():
     return {"fields": fields}
 
 
+@router.get("/lark/kenh-options")
+async def get_kenh_options():
+    """Return the single-select options for the Kênh field."""
+    from ..services.lark import get_field_options
+    cfg        = load_config()
+    app_id     = cfg.get("lark_app_id", "").strip()
+    app_secret = cfg.get("lark_app_secret", "").strip()
+    if not app_id or not app_secret:
+        raise HTTPException(status_code=400, detail="Lark credentials not configured.")
+    field_name = cfg.get("lark_field_kenh", "Kênh")
+    try:
+        options = await get_field_options(app_id, app_secret, field_name)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"options": options}
+
+
 def _lark_field_map(cfg: dict) -> dict:
     return {
         "link":       cfg.get("lark_field_link",       "Link"),
@@ -334,6 +351,7 @@ def _lark_field_map(cfg: dict) -> dict:
         "music":      cfg.get("lark_field_music",      "Nhạc"),
         "music_name": cfg.get("lark_field_music_name", "Tên nhạc"),
         "status":     cfg.get("lark_field_status",     "Status"),
+        "kenh":       cfg.get("lark_field_kenh",       "Kênh"),
     }
 
 
@@ -370,6 +388,8 @@ async def submit_records(body: dict):
         row[fm["link"]] = item.get("url", "")
         row[fm["music"]] = "yes" if item.get("use_music") else "no"
         row[fm["status"]] = "Chờ xử lý"
+        if item.get("kenh"):
+            row[fm["kenh"]] = item["kenh"]
         row["_record_id"] = rid
         new_records.append(row)
 

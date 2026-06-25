@@ -74,6 +74,7 @@ class _DataScreenState extends State<DataScreen> {
   String? _error;
   String _search = '';
   String? _statusFilter;
+  String? _kenhFilter;
   bool _processing = false;
 
   // Phase 2: ValueNotifier — selection changes never trigger table rebuild
@@ -207,6 +208,13 @@ class _DataScreenState extends State<DataScreen> {
               .toSet();
           if (!existing.contains(_statusFilter)) _statusFilter = null;
         }
+        if (_kenhFilter != null) {
+          final existing = reversed.records
+              .map((r) => r['Kênh'] ?? '')
+              .where((s) => s.isNotEmpty)
+              .toSet();
+          if (!existing.contains(_kenhFilter)) _kenhFilter = null;
+        }
         if (!silent) _loading = false;
       });
     } on Exception catch (e) {
@@ -228,6 +236,9 @@ class _DataScreenState extends State<DataScreen> {
     if (_statusFilter != null) {
       list = list.where((r) => r['Status'] == _statusFilter).toList();
     }
+    if (_kenhFilter != null) {
+      list = list.where((r) => r['Kênh'] == _kenhFilter).toList();
+    }
     if (_search.isNotEmpty) {
       final q = _search.toLowerCase();
       list = list.where((r) => r.values.any((v) => v.toLowerCase().contains(q))).toList();
@@ -239,6 +250,16 @@ class _DataScreenState extends State<DataScreen> {
     if (_data == null) return [];
     return _data!.records
         .map((r) => r['Status'] ?? '')
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  List<String> get _kenhValues {
+    if (_data == null) return [];
+    return _data!.records
+        .map((r) => r['Kênh'] ?? '')
         .where((s) => s.isNotEmpty)
         .toSet()
         .toList()
@@ -448,59 +469,29 @@ class _DataScreenState extends State<DataScreen> {
 
   Future<void> _showSubmitDialog() async {
     final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    List<String> kenhOptions = [];
+
+    try {
+      kenhOptions = await widget.api.getKenhOptions();
+    } on Exception {
+      // kênh dropdown will be empty — still allow submit without it
+    }
+
+    if (!mounted) return;
+
+    final result = await showDialog<Map<String, dynamic>?>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        title: const Text('Thêm URL vào hàng đợi',
-            style: TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w700)),
-        content: SizedBox(
-          width: 440,
-          child: TextField(
-            controller: ctrl,
-            maxLines: 8,
-            autofocus: true,
-            style: const TextStyle(color: kText, fontSize: 12, fontFamily: 'monospace'),
-            decoration: InputDecoration(
-              hintText: 'Dán text chia sẻ Douyin...\n(Ký tự € ở cuối = không chèn nhạc)',
-              hintStyle: const TextStyle(color: kMuted, fontSize: 11.5),
-              filled: true,
-              fillColor: kInputBg,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(5),
-                borderSide: const BorderSide(color: kBorder),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(5),
-                borderSide: const BorderSide(color: kBorder),
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: kTextDim)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: kAccent,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-            ),
-            child: const Text('Thêm', style: TextStyle(fontWeight: FontWeight.w600)),
-          ),
-        ],
+      builder: (ctx) => _SubmitDialog(
+        ctrl: ctrl,
+        kenhOptions: kenhOptions,
       ),
     );
 
     final text = ctrl.text.trim();
     WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
-    if (ok != true || text.isEmpty || !mounted) return;
+    if (result == null || text.isEmpty || !mounted) return;
 
+    final kenh = result['kenh'] as String?;
     final videos = DouyinParser.parse(text);
     if (videos.isEmpty) {
       _addLog('✗ Không tìm thấy URL Douyin hợp lệ', LogType.error);
@@ -508,7 +499,11 @@ class _DataScreenState extends State<DataScreen> {
     }
 
     try {
-      final items = videos.map((v) => {'url': v.url, 'use_music': v.useMusic}).toList();
+      final items = videos.map((v) {
+        final m = <String, dynamic>{'url': v.url, 'use_music': v.useMusic};
+        if (kenh != null && kenh.isNotEmpty) m['kenh'] = kenh;
+        return m;
+      }).toList();
       final ids = await widget.api.submitToLark(items);
       _addLog('✓ Đã thêm ${ids.length} bản ghi vào hàng đợi', LogType.success);
     } on Exception catch (e) {
@@ -619,6 +614,40 @@ class _DataScreenState extends State<DataScreen> {
                               )),
                         ],
                         onChanged: (v) => setState(() { _statusFilter = v; _filteredCache = null; }),
+                      ),
+                    ),
+                  );
+                }),
+              const SizedBox(width: 10),
+              // Kênh filter
+              if (_data != null && _kenhValues.isNotEmpty)
+                Builder(builder: (context) {
+                  final safeFilter = _kenhValues.contains(_kenhFilter) ? _kenhFilter : null;
+                  return Container(
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: kInputBg,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: safeFilter != null ? kAccent : kBorder),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String?>(
+                        value: safeFilter,
+                        isDense: true,
+                        style: const TextStyle(color: kText, fontSize: 12.5),
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: kMuted),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('Tất cả kênh', style: TextStyle(color: kTextDim, fontSize: 12.5)),
+                          ),
+                          ..._kenhValues.map((s) => DropdownMenuItem<String?>(
+                                value: s,
+                                child: Text(s, style: const TextStyle(fontSize: 12.5)),
+                              )),
+                        ],
+                        onChanged: (v) => setState(() { _kenhFilter = v; _filteredCache = null; }),
                       ),
                     ),
                   );
@@ -1279,6 +1308,111 @@ class _LogPaneState extends State<_LogPane> {
           ),
         ),
       ]),
+    );
+  }
+}
+
+// ── Submit dialog ─────────────────────────────────────────────────────────────
+
+class _SubmitDialog extends StatefulWidget {
+  final TextEditingController ctrl;
+  final List<String> kenhOptions;
+
+  const _SubmitDialog({
+    required this.ctrl,
+    required this.kenhOptions,
+  });
+
+  @override
+  State<_SubmitDialog> createState() => _SubmitDialogState();
+}
+
+class _SubmitDialogState extends State<_SubmitDialog> {
+  String? _selectedKenh;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      title: const Text('Thêm URL vào hàng đợi',
+          style: TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w700)),
+      content: SizedBox(
+        width: 440,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.kenhOptions.isNotEmpty) ...[
+              const Text('Kênh', style: TextStyle(color: kTextDim, fontSize: 11.5, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                initialValue: _selectedKenh,
+                hint: const Text('Chọn kênh...', style: TextStyle(color: kMuted, fontSize: 12.5)),
+                isExpanded: true,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: kInputBg,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(5),
+                    borderSide: const BorderSide(color: kBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(5),
+                    borderSide: const BorderSide(color: kBorder),
+                  ),
+                ),
+                style: const TextStyle(color: kText, fontSize: 12.5),
+                dropdownColor: Colors.white,
+                items: widget.kenhOptions
+                    .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedKenh = v),
+              ),
+              const SizedBox(height: 12),
+            ],
+            const Text('URL Douyin', style: TextStyle(color: kTextDim, fontSize: 11.5, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: widget.ctrl,
+              maxLines: 7,
+              autofocus: true,
+              style: const TextStyle(color: kText, fontSize: 12, fontFamily: 'monospace'),
+              decoration: InputDecoration(
+                hintText: 'Dán text chia sẻ Douyin...\n(Ký tự € ở cuối = không chèn nhạc)',
+                hintStyle: const TextStyle(color: kMuted, fontSize: 11.5),
+                filled: true,
+                fillColor: kInputBg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(5),
+                  borderSide: const BorderSide(color: kBorder),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(5),
+                  borderSide: const BorderSide(color: kBorder),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Hủy', style: TextStyle(color: kTextDim)),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, {'kenh': _selectedKenh}),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kAccent,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+          ),
+          child: const Text('Thêm', style: TextStyle(fontWeight: FontWeight.w600)),
+        ),
+      ],
     );
   }
 }
