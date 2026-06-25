@@ -10,7 +10,6 @@ pw_datas, pw_binaries, pw_hiddenimports = collect_all("playwright")
 ff_datas = collect_data_files("imageio_ffmpeg")
 yt_datas, yt_binaries, yt_hiddenimports = collect_all("yt_dlp")
 
-web_dir = os.path.join(os.getcwd(), "flutter_ui", "build", "web")
 icon_path = os.path.join(os.getcwd(), "assets", "icon.icns")
 
 a = Analysis(
@@ -18,7 +17,6 @@ a = Analysis(
     pathex=[os.getcwd()],
     binaries=[*pw_binaries, *yt_binaries],
     datas=[
-        (web_dir, "web"),
         ("backend", "backend"),
         *pw_datas,
         *ff_datas,
