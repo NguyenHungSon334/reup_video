@@ -12,6 +12,7 @@ except ImportError:
     pass
 
 CONFIG_FILE = Path(__file__).parent.parent / "config.json"
+COOKIES_STORE_FILE = Path(__file__).parent.parent / "douyin.cookies.txt"
 
 _DEFAULTS: dict[str, Any] = {
     # ── Lark (fixed) ──────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ _DEFAULTS: dict[str, Any] = {
     "gdrive_credentials_path": "",
     "cookies_browser": "",
     "cookies_file": "",
+    "cookies_text": "",
     "save_to": "drive",
     "local_folder": "",
 }
@@ -59,12 +61,26 @@ _ENV_MAP = {
     "LARK_FIELD_MUSIC_NAME":    "lark_field_music_name",
     "LARK_FIELD_STATUS":        "lark_field_status",
     "LARK_FIELD_KENH":          "lark_field_kenh",
+    "DOUYIN_COOKIES_BROWSER":   "cookies_browser",
+    "DOUYIN_COOKIES_FILE":      "cookies_file",
 }
+
+
+
+
+def _read_cookie_text(path_value: str) -> str:
+    path = Path(path_value)
+    if not path.exists() or not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
 
 
 def load_config() -> dict[str, Any]:
     cfg = dict(_DEFAULTS)
-    # Layer 1: env vars (set in Railway dashboard — survive restarts)
+    # Layer 1: env vars (set in Railway dashboard - survive restarts)
     for env_key, cfg_key in _ENV_MAP.items():
         val = os.environ.get(env_key, "").strip()
         if val:
@@ -75,10 +91,39 @@ def load_config() -> dict[str, Any]:
             cfg.update(json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
         except Exception:
             pass
+
+    cookies_path = str(cfg.get("cookies_file", "")).strip()
+    if cookies_path and not Path(cookies_path).exists():
+        cookies_path = ""
+    if not cookies_path and COOKIES_STORE_FILE.exists():
+        cookies_path = str(COOKIES_STORE_FILE)
+        cfg["cookies_file"] = cookies_path
+    # Recover: if cookies_text is embedded in config.json but file is gone, restore it
+    if not cookies_path:
+        raw = str(cfg.get("cookies_text", "")).strip()
+        if raw:
+            COOKIES_STORE_FILE.write_text(raw + "\n", encoding="utf-8")
+            cookies_path = str(COOKIES_STORE_FILE)
+            cfg["cookies_file"] = cookies_path
+    cfg["cookies_text"] = _read_cookie_text(cookies_path) if cookies_path else ""
     return cfg
 
 
 def save_config(cfg: dict[str, Any]) -> None:
     existing = load_config()
+    cookies_text = cfg.pop("cookies_text", None)
     existing.update(cfg)
+
+    if cookies_text is not None:
+        raw = str(cookies_text).replace("\r\n", "\n").strip()
+        if raw:
+            COOKIES_STORE_FILE.write_text(raw + "\n", encoding="utf-8")
+            existing["cookies_file"] = str(COOKIES_STORE_FILE)
+        else:
+            if existing.get("cookies_file") == str(COOKIES_STORE_FILE):
+                existing["cookies_file"] = ""
+            if COOKIES_STORE_FILE.exists():
+                COOKIES_STORE_FILE.unlink()
+
+    existing.pop("cookies_text", None)
     CONFIG_FILE.write_text(json.dumps(existing, indent=2), encoding="utf-8")

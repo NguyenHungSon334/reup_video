@@ -34,6 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _appSecretCtrl = TextEditingController();
   final _cookiesBrowserCtrl = TextEditingController();
   final _cookiesFileCtrl = TextEditingController();
+  final _cookiesTextCtrl = TextEditingController();
 
   int _destTab = 0;
   int _logoScale = 150;
@@ -66,6 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _appSecretCtrl.dispose();
     _cookiesBrowserCtrl.dispose();
     _cookiesFileCtrl.dispose();
+    _cookiesTextCtrl.dispose();
     super.dispose();
   }
 
@@ -86,6 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _appSecretCtrl.text = cfg['lark_app_secret'] as String? ?? '';
         _cookiesBrowserCtrl.text = cfg['cookies_browser'] as String? ?? '';
         _cookiesFileCtrl.text = cfg['cookies_file'] as String? ?? '';
+        _cookiesTextCtrl.text = cfg['cookies_text'] as String? ?? '';
         _destTab = (cfg['save_to'] as String? ?? 'drive') == 'local' ? 1 : 0;
         _logoScale = (cfg['logo_scale'] as num?)?.toInt() ?? 150;
         _logoPosition = cfg['logo_position'] as String? ?? 'top_left';
@@ -128,6 +131,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'logo_opacity': _logoOpacity,
         'cookies_browser': _cookiesBrowserCtrl.text.trim(),
         'cookies_file': _cookiesFileCtrl.text.trim(),
+        'cookies_text': _cookiesTextCtrl.text,
       });
       _showMsg('✓ Đã lưu cài đặt');
     } on Exception catch (e) {
@@ -234,6 +238,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onScaleChanged: (v) => setState(() => _logoScale = v),
                   onPositionChanged: (v) => setState(() => _logoPosition = v),
                   onOpacityChanged: (v) => setState(() => _logoOpacity = v),
+                ),
+                const SizedBox(height: 16),
+                _CookiesSection(
+                  cookiesBrowserCtrl: _cookiesBrowserCtrl,
+                  cookiesFileCtrl: _cookiesFileCtrl,
+                  cookiesTextCtrl: _cookiesTextCtrl,
                 ),
                 const SizedBox(height: 16),
                 _LarkSection(
@@ -1152,6 +1162,115 @@ class _MediaSection extends StatelessWidget {
 }
 
 // ── Lark section ──────────────────────────────────────────────────────────────
+
+class _CookiesSection extends StatelessWidget {
+  final TextEditingController cookiesBrowserCtrl;
+  final TextEditingController cookiesFileCtrl;
+  final TextEditingController cookiesTextCtrl;
+
+  const _CookiesSection({
+    required this.cookiesBrowserCtrl,
+    required this.cookiesFileCtrl,
+    required this.cookiesTextCtrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PanelCard(
+      title: 'COOKIES DOUYIN',
+      actionWidget:
+          const Icon(Icons.cookie_outlined, size: 14, color: kMuted),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: kAccent.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: kAccent.withValues(alpha: 0.2)),
+            ),
+            child: const Text(
+              'Dan cookies.txt dang Netscape vao o ben duoi. Backend se luu thanh file noi bo va tu dong dung cho downloader.',
+              style: TextStyle(color: kTextDim, fontSize: 11, height: 1.45),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text('Cookies Browser (local only)',
+              style: TextStyle(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
+          const SizedBox(height: 6),
+          DarkInput(
+              ctrl: cookiesBrowserCtrl,
+              hint: 'chrome | edge | firefox | safari'),
+          const SizedBox(height: 12),
+          const Text('Cookies File Path',
+              style: TextStyle(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
+          const SizedBox(height: 4),
+          const Text(
+            'Neu dan noi dung ben duoi thi field nay se duoc cap nhat tu dong.',
+            style: TextStyle(color: kTextDim, fontSize: 10.5),
+          ),
+          const SizedBox(height: 6),
+          DarkInput(ctrl: cookiesFileCtrl, hint: 'C:/path/to/cookies.txt'),
+          const SizedBox(height: 12),
+          const Text('Noi dung cookies.txt',
+              style: TextStyle(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
+          const SizedBox(height: 4),
+          const Text(
+            'Dan nguyen file cookies.txt cua domain douyin.com vao day.',
+            style: TextStyle(color: kTextDim, fontSize: 10.5),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: cookiesTextCtrl,
+            minLines: 10,
+            maxLines: 16,
+            style: const TextStyle(
+              color: kText,
+              fontSize: 11,
+              fontFamily: 'monospace',
+              height: 1.4,
+            ),
+            decoration: InputDecoration(
+              hintText: '# Netscape HTTP Cookie File\n.douyin.com\tTRUE\t/\tTRUE\t0\tsessionid\txxx',
+              hintStyle: const TextStyle(color: kMuted, fontSize: 11),
+              filled: true,
+              fillColor: kInputBg,
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(5),
+                borderSide: const BorderSide(color: kBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(5),
+                borderSide: const BorderSide(color: kBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(5),
+                borderSide:
+                    const BorderSide(color: Color.fromRGBO(37, 99, 235, 0.55)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _LarkSection extends StatelessWidget {
   final TextEditingController appIdCtrl;

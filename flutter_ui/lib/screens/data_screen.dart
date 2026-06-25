@@ -589,31 +589,35 @@ class _DataScreenState extends State<DataScreen> {
               if (_data != null && _statusValues.isNotEmpty)
                 Builder(builder: (context) {
                   final safeFilter = _statusValues.contains(_statusFilter) ? _statusFilter : null;
-                  return Container(
-                    height: 36,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: kInputBg,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: safeFilter != null ? kAccent : kBorder),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String?>(
-                        value: safeFilter,
-                        isDense: true,
-                        style: const TextStyle(color: kText, fontSize: 12.5),
-                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: kMuted),
-                        items: [
-                          const DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text('Tất cả', style: TextStyle(color: kTextDim, fontSize: 12.5)),
-                          ),
-                          ..._statusValues.map((s) => DropdownMenuItem<String?>(
-                                value: s,
-                                child: Text(s, style: const TextStyle(fontSize: 12.5)),
-                              )),
-                        ],
-                        onChanged: (v) => setState(() { _statusFilter = v; _filteredCache = null; }),
+                  return ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 150),
+                    child: Container(
+                      height: 36,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: kInputBg,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: safeFilter != null ? kAccent : kBorder),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String?>(
+                          value: safeFilter,
+                          isDense: true,
+                          isExpanded: true,
+                          style: const TextStyle(color: kText, fontSize: 12.5),
+                          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: kMuted),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('Tất cả', style: TextStyle(color: kTextDim, fontSize: 12.5), overflow: TextOverflow.ellipsis),
+                            ),
+                            ..._statusValues.map((s) => DropdownMenuItem<String?>(
+                                  value: s,
+                                  child: Text(s, style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis),
+                                )),
+                          ],
+                          onChanged: (v) => setState(() { _statusFilter = v; _filteredCache = null; }),
+                        ),
                       ),
                     ),
                   );
@@ -623,31 +627,35 @@ class _DataScreenState extends State<DataScreen> {
               if (_data != null && _kenhValues.isNotEmpty)
                 Builder(builder: (context) {
                   final safeFilter = _kenhValues.contains(_kenhFilter) ? _kenhFilter : null;
-                  return Container(
-                    height: 36,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: kInputBg,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: safeFilter != null ? kAccent : kBorder),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String?>(
-                        value: safeFilter,
-                        isDense: true,
-                        style: const TextStyle(color: kText, fontSize: 12.5),
-                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: kMuted),
-                        items: [
-                          const DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text('Tất cả kênh', style: TextStyle(color: kTextDim, fontSize: 12.5)),
-                          ),
-                          ..._kenhValues.map((s) => DropdownMenuItem<String?>(
-                                value: s,
-                                child: Text(s, style: const TextStyle(fontSize: 12.5)),
-                              )),
-                        ],
-                        onChanged: (v) => setState(() { _kenhFilter = v; _filteredCache = null; }),
+                  return ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 150),
+                    child: Container(
+                      height: 36,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: kInputBg,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: safeFilter != null ? kAccent : kBorder),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String?>(
+                          value: safeFilter,
+                          isDense: true,
+                          isExpanded: true,
+                          style: const TextStyle(color: kText, fontSize: 12.5),
+                          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: kMuted),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('Tất cả kênh', style: TextStyle(color: kTextDim, fontSize: 12.5), overflow: TextOverflow.ellipsis),
+                            ),
+                            ..._kenhValues.map((s) => DropdownMenuItem<String?>(
+                                  value: s,
+                                  child: Text(s, style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis),
+                                )),
+                          ],
+                          onChanged: (v) => setState(() { _kenhFilter = v; _filteredCache = null; }),
+                        ),
                       ),
                     ),
                   );
