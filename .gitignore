@@ -50,6 +50,11 @@ backend/token.json
 backend/*.secret
 backend/*.key
 
+# Build output
+dist/
+build/
+*.spec.bak
+
 # Generated assets and caches
 **/__pycache__/
 **/*.pyc

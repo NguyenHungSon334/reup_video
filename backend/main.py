@@ -1,3 +1,5 @@
+import sys
+import os
 import uvicorn
 from pathlib import Path
 from fastapi import FastAPI
@@ -17,14 +19,8 @@ app.add_middleware(
 
 app.include_router(router)
 
-# Optional: Serve frontend locally during development
-# Uncomment if running frontend and backend on same server
-# web_dir = Path(__file__).resolve().parent.parent / "flutter_ui" / "build" / "web"
-# if web_dir.exists():
-#     app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="frontend")
 
 
 if __name__ == "__main__":
-    import os
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=False)

@@ -6,7 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 class ApiService {
   static String host = '127.0.0.1';
-  static int port = 8000;
+  static int port = kIsWeb ? 8000 : 8765;
 
   static const String _railwayUrl = 'https://web-production-ba657.up.railway.app';
 

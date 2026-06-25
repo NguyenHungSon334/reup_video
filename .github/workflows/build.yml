@@ -2,12 +2,11 @@ name: Build Release
 
 on:
   push:
-    tags:
-      - "v*"          # trigger on: git tag v1.0.0 && git push --tags
-  workflow_dispatch:  # or trigger manually from GitHub Actions tab
+    tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
-  # ── Windows EXE ───────────────────────────────────────────────────────────
+  # ── Windows: backend EXE + Flutter desktop + Inno Setup ─────────────────
   build-windows:
     runs-on: windows-latest
     steps:
@@ -18,16 +17,17 @@ jobs:
           flutter-version: "3.x"
           channel: stable
 
-      - name: Build Flutter web
+      - name: Build Flutter Windows desktop
         run: |
           cd flutter_ui
-          flutter build web --release
+          flutter config --enable-windows-desktop
+          flutter build windows --release
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install Python deps
         run: |
           pip install pyinstaller pillow
           pip install -r requirements.txt
@@ -35,16 +35,23 @@ jobs:
       - name: Generate icon
         run: python assets/generate_icon.py
 
-      - name: Build EXE
+      - name: Build backend EXE
         run: pyinstaller reup.spec --noconfirm --clean
 
-      - name: Upload EXE artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReupVideo-Windows
-          path: dist/ReupVideo.exe
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
 
-  # ── macOS DMG ─────────────────────────────────────────────────────────────
+      - name: Build installer
+        run: |
+          mkdir dist\installer
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReupVideo-Windows-Installer
+          path: dist\installer\Setup_ReupVideo_1.0.0.exe
+
+  # ── macOS: backend + Flutter macOS app + DMG ────────────────────────────
   build-macos:
     runs-on: macos-latest
     steps:
@@ -55,16 +62,17 @@ jobs:
           flutter-version: "3.x"
           channel: stable
 
-      - name: Build Flutter web
+      - name: Build Flutter macOS desktop
         run: |
           cd flutter_ui
-          flutter build web --release
+          flutter config --enable-macos-desktop
+          flutter build macos --release
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install Python deps
         run: |
           pip3 install pyinstaller pillow
           pip3 install -r requirements.txt
@@ -73,50 +81,49 @@ jobs:
       - name: Generate icon
         run: python3 assets/generate_icon_mac.py
 
-      - name: Build .app
+      - name: Build backend
         run: pyinstaller reup_mac.spec --noconfirm --clean
 
-      - name: Create DMG
+      - name: Package DMG
         run: |
+          mkdir -p dist/dmg_staging/ReupVideo
+          cp dist/ReupVideo dist/dmg_staging/ReupVideo/ReupVideo-backend
+          cp -r "flutter_ui/build/macos/Build/Products/Release/reup_flutter.app" \
+                dist/dmg_staging/ReupVideo/
+
           mkdir -p dist/installer_mac
           create-dmg \
             --volname "Reup Video" \
             --volicon "assets/icon.icns" \
             --window-pos 200 120 \
-            --window-size 600 400 \
+            --window-size 640 400 \
             --icon-size 100 \
-            --icon "ReupVideo.app" 175 190 \
-            --hide-extension "ReupVideo.app" \
-            --app-drop-link 425 190 \
-            "dist/installer_mac/ReupVideo_mac.dmg" \
-            "dist/ReupVideo.app"
+            --icon "reup_flutter.app" 160 190 \
+            --hide-extension "reup_flutter.app" \
+            --app-drop-link 480 190 \
+            "dist/installer_mac/ReupVideo_mac_1.0.0.dmg" \
+            "dist/dmg_staging/ReupVideo"
 
-      - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ReupVideo-macOS
-          path: dist/installer_mac/ReupVideo_mac.dmg
+          name: ReupVideo-macOS-DMG
+          path: dist/installer_mac/ReupVideo_mac_1.0.0.dmg
 
-  # ── Create GitHub Release ─────────────────────────────────────────────────
+  # ── GitHub Release ───────────────────────────────────────────────────────
   release:
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/download-artifact@v4
-        with:
-          name: ReupVideo-Windows
-          path: artifacts/
+        with: { name: ReupVideo-Windows-Installer, path: artifacts/ }
 
       - uses: actions/download-artifact@v4
-        with:
-          name: ReupVideo-macOS
-          path: artifacts/
+        with: { name: ReupVideo-macOS-DMG, path: artifacts/ }
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/ReupVideo.exe
-            artifacts/ReupVideo_mac.dmg
+            artifacts/Setup_ReupVideo_1.0.0.exe
+            artifacts/ReupVideo_mac_1.0.0.dmg
           generate_release_notes: true

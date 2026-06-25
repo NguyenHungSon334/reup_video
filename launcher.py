@@ -1,21 +1,22 @@
 """
-Reup Video — desktop launcher (single EXE).
-- First run: shows progress window while installing Playwright Chromium
-- Subsequent runs: instant start + auto-open browser
+Reup Video — backend launcher.
+Starts FastAPI on port 8765, then launches the Flutter desktop UI exe.
+On first run, installs Playwright Chromium with a progress window.
 """
 import sys
 import os
 
 if getattr(sys, 'frozen', False):
     sys.path.insert(0, sys._MEIPASS)
-    # console=False sets stdout/stderr to None — redirect to log file
+    _EXE_DIR = os.path.dirname(sys.executable)
     _LOG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "ReupVideo")
     os.makedirs(_LOG_DIR, exist_ok=True)
-    _log_file = open(os.path.join(_LOG_DIR, "app.log"), "w", encoding="utf-8", buffering=1)
-    sys.stdout = _log_file
-    sys.stderr = _log_file
+    _log = open(os.path.join(_LOG_DIR, "backend.log"), "w", encoding="utf-8", buffering=1)
+    sys.stdout = _log
+    sys.stderr = _log
+else:
+    _EXE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Store Playwright browsers in AppData — persists across runs
 _BROWSERS_DIR = os.path.join(
     os.environ.get("APPDATA", os.path.expanduser("~")),
     "ReupVideo", "browsers",
@@ -23,11 +24,11 @@ _BROWSERS_DIR = os.path.join(
 os.makedirs(_BROWSERS_DIR, exist_ok=True)
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _BROWSERS_DIR
 
-import socket
+BACKEND_PORT = 8765
+
 import subprocess
 import threading
 import time
-import webbrowser
 import tkinter as tk
 from tkinter import ttk
 
@@ -41,11 +42,9 @@ class _SetupWindow:
         self.root.geometry("480x200")
         self.root.resizable(False, False)
         self.root.configure(bg="#0d1117")
-        self.root.protocol("WM_DELETE_WINDOW", lambda: None)  # disable close
+        self.root.protocol("WM_DELETE_WINDOW", lambda: None)
         self.root.attributes("-topmost", True)
 
-        # Center on screen
-        self.root.update_idletasks()
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         self.root.geometry(f"480x200+{(sw-480)//2}+{(sh-200)//2}")
 
@@ -54,31 +53,26 @@ class _SetupWindow:
                  fg="#ffffff", bg="#0d1117").pack(pady=(28, 6))
 
         tk.Label(self.root, text="Thiết lập lần đầu — chỉ cần làm 1 lần",
-                 font=("Segoe UI", 10),
-                 fg="#6e7681", bg="#0d1117").pack()
+                 font=("Segoe UI", 10), fg="#6e7681", bg="#0d1117").pack()
 
-        self._status_var = tk.StringVar(value="Đang kiểm tra...")
-        tk.Label(self.root, textvariable=self._status_var,
-                 font=("Segoe UI", 9),
-                 fg="#58a6ff", bg="#0d1117").pack(pady=(8, 10))
+        self._status = tk.StringVar(value="Đang kiểm tra...")
+        tk.Label(self.root, textvariable=self._status,
+                 font=("Segoe UI", 9), fg="#58a6ff", bg="#0d1117").pack(pady=(8, 10))
 
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("Blue.Horizontal.TProgressbar",
-                        troughcolor="#161b22",
-                        background="#1f6feb",
-                        borderwidth=0, relief="flat",
-                        thickness=5)
+        s = ttk.Style()
+        s.theme_use("clam")
+        s.configure("B.Horizontal.TProgressbar",
+                    troughcolor="#161b22", background="#1f6feb",
+                    borderwidth=0, relief="flat", thickness=5)
 
-        self._bar = ttk.Progressbar(self.root,
-                                     style="Blue.Horizontal.TProgressbar",
+        self._bar = ttk.Progressbar(self.root, style="B.Horizontal.TProgressbar",
                                      mode="indeterminate", length=420)
         self._bar.pack()
         self._bar.start(10)
         self.root.update()
 
-    def set_status(self, text: str):
-        self._status_var.set(text)
+    def status(self, text: str):
+        self._status.set(text)
         self.root.update()
 
     def close(self):
@@ -89,7 +83,7 @@ class _SetupWindow:
         self.root.update()
 
 
-# ── Playwright check / install ─────────────────────────────────────────────
+# ── Playwright ─────────────────────────────────────────────────────────────
 
 def _playwright_ready() -> bool:
     try:
@@ -101,25 +95,35 @@ def _playwright_ready() -> bool:
 
 
 def _install_playwright(ui: _SetupWindow):
-    ui.set_status("Đang tải Playwright Chromium (~150 MB)...")
-    subprocess.run(
-        [sys.executable, "-m", "playwright", "install", "chromium"],
-        check=False,
-    )
-    ui.set_status("Hoàn tất! Đang khởi động...")
+    ui.status("Đang tải Playwright Chromium (~150 MB)...")
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
+    ui.status("Hoàn tất! Đang khởi động...")
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────
+# ── Flutter UI launcher ────────────────────────────────────────────────────
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
+def _launch_flutter():
+    """Find and launch the Flutter desktop exe sitting next to this backend."""
+    candidates = [
+        os.path.join(_EXE_DIR, "reup_flutter.exe"),       # Windows
+        os.path.join(_EXE_DIR, "ReupVideo_UI.exe"),
+        os.path.join(_EXE_DIR, "reup_flutter"),            # macOS/Linux
+        os.path.join(_EXE_DIR, "ReupVideo_UI"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            subprocess.Popen([path])
+            return
+    # Dev mode fallback — run flutter from source
+    flutter_dir = os.path.join(os.path.dirname(_EXE_DIR), "flutter_ui")
+    if os.path.isdir(flutter_dir):
+        subprocess.Popen(["flutter", "run", "-d", "windows"], cwd=flutter_dir)
 
 
 # ── Main ───────────────────────────────────────────────────────────────────
 
 def main():
+    # First-run: install playwright with progress UI
     if not _playwright_ready():
         ui = _SetupWindow()
         worker = threading.Thread(target=_install_playwright, args=(ui,), daemon=True)
@@ -129,16 +133,12 @@ def main():
             time.sleep(0.05)
         ui.close()
 
-    port = _free_port()
-    os.environ["PORT"] = str(port)
+    # Launch Flutter UI after backend starts
+    threading.Timer(2.0, _launch_flutter).start()
 
-    threading.Thread(
-        target=lambda: (time.sleep(2.5), webbrowser.open(f"http://127.0.0.1:{port}")),
-        daemon=True,
-    ).start()
-
+    os.environ["PORT"] = str(BACKEND_PORT)
     import uvicorn
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=port,
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=BACKEND_PORT,
                 reload=False, log_config=None)
 
 
