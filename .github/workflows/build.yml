@@ -1,0 +1,122 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - "v*"          # trigger on: git tag v1.0.0 && git push --tags
+  workflow_dispatch:  # or trigger manually from GitHub Actions tab
+
+jobs:
+  # ── Windows EXE ───────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.x"
+          channel: stable
+
+      - name: Build Flutter web
+        run: |
+          cd flutter_ui
+          flutter build web --release
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller pillow
+          pip install -r requirements.txt
+
+      - name: Generate icon
+        run: python assets/generate_icon.py
+
+      - name: Build EXE
+        run: pyinstaller reup.spec --noconfirm --clean
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReupVideo-Windows
+          path: dist/ReupVideo.exe
+
+  # ── macOS DMG ─────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.x"
+          channel: stable
+
+      - name: Build Flutter web
+        run: |
+          cd flutter_ui
+          flutter build web --release
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip3 install pyinstaller pillow
+          pip3 install -r requirements.txt
+          brew install create-dmg
+
+      - name: Generate icon
+        run: python3 assets/generate_icon_mac.py
+
+      - name: Build .app
+        run: pyinstaller reup_mac.spec --noconfirm --clean
+
+      - name: Create DMG
+        run: |
+          mkdir -p dist/installer_mac
+          create-dmg \
+            --volname "Reup Video" \
+            --volicon "assets/icon.icns" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "ReupVideo.app" 175 190 \
+            --hide-extension "ReupVideo.app" \
+            --app-drop-link 425 190 \
+            "dist/installer_mac/ReupVideo_mac.dmg" \
+            "dist/ReupVideo.app"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReupVideo-macOS
+          path: dist/installer_mac/ReupVideo_mac.dmg
+
+  # ── Create GitHub Release ─────────────────────────────────────────────────
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ReupVideo-Windows
+          path: artifacts/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ReupVideo-macOS
+          path: artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/ReupVideo.exe
+            artifacts/ReupVideo_mac.dmg
+          generate_release_notes: true
