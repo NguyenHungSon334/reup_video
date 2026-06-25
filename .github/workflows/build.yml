@@ -12,6 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
+      - name: Create .env from secret
+        run: echo "$env:ENV_FILE" | Out-File -FilePath .env -Encoding utf8
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+
       - uses: subosito/flutter-action@v2.14.0
         with:
           flutter-version: "3.x"
@@ -56,6 +61,11 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4.2.2
+
+      - name: Create .env from secret
+        run: printf '%s' "$ENV_FILE" > .env
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
 
       - uses: subosito/flutter-action@v2.14.0
         with:
