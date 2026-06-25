@@ -14,7 +14,10 @@ _BASE = Path(__file__).parent.parent
 CREDENTIALS_FILE = Path(__file__).parent / "credentials.json"
 
 if getattr(sys, "frozen", False):
-    _DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "ReupVideo"
+    if sys.platform == "darwin":
+        _DATA_DIR = Path.home() / "Library" / "Application Support" / "ReupVideo"
+    else:
+        _DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "ReupVideo"
 else:
     _DATA_DIR = _BASE
 _DATA_DIR.mkdir(parents=True, exist_ok=True)

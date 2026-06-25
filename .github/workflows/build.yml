@@ -112,6 +112,7 @@ jobs:
         run: |
           mkdir -p dist/dmg_staging/ReupVideo
           cp dist/ReupVideo/ReupVideo dist/dmg_staging/ReupVideo/ReupVideo-backend
+          cp -r dist/ReupVideo/pw_browsers dist/dmg_staging/ReupVideo/pw_browsers
           cp -r "flutter_ui/build/macos/Build/Products/Release/reup_flutter.app" \
                 dist/dmg_staging/ReupVideo/
 
