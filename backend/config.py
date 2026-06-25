@@ -7,15 +7,16 @@ try:
     from dotenv import load_dotenv
     _env_file = Path(__file__).parent.parent / ".env"
     if _env_file.exists():
-        load_dotenv(_env_file, override=False)  # don't override already-set env vars (Railway)
+        load_dotenv(_env_file, override=False)
 except ImportError:
     pass
 
 CONFIG_FILE = Path(__file__).parent.parent / "config.json"
 COOKIES_STORE_FILE = Path(__file__).parent.parent / "douyin.cookies.txt"
+_BUNDLED_CREDS = Path(__file__).parent / "credentials.json"
 
 _DEFAULTS: dict[str, Any] = {
-    # ── Lark (fixed) ──────────────────────────────────────────────────────────
+    # ── Lark ──────────────────────────────────────────────────────────────────
     "lark_app_id":               "cli_aab92e864f78ded0",
     "lark_app_secret":           "4lKobJ2pNckhIZcJ9C3aAxVkRLmOHB1O",
     "lark_field_link":           "Link video Douyin",
@@ -24,10 +25,12 @@ _DEFAULTS: dict[str, Any] = {
     "lark_field_music_name":     "Tên Nhạc",
     "lark_field_status":         "Status",
     "lark_field_kenh":           "Kênh",
-    # ── Google Drive (fixed) ──────────────────────────────────────────────────
+    # ── Google Drive ──────────────────────────────────────────────────────────
     "gdrive_folder_id":          "1sCqlg4vQs2TlaiqlFUdrg9uAP7pQwxeh",
     "reup_gdrive_folder_id":     "1Oi3Rx1_nMfOIMh-L8iiJ1Z2d34YKJMxy",
-    # ── Media settings (configurable via Settings page) ───────────────────────
+    "music_gdrive_folder_id":    "1_DdehS3H6sFHtXhc9rJNGNMbTXfD1UCU",
+    "logo_gdrive_folder_id":     "1ZftQa9gtbIlEwB0NzRmLGOoGuYQLXMcE",
+    # ── Media settings ────────────────────────────────────────────────────────
     "logo_path": "",
     "use_logo": True,
     "logo_scale": 150,
@@ -36,9 +39,7 @@ _DEFAULTS: dict[str, Any] = {
     "music_path": "",
     "use_music": False,
     "music_folder": "",
-    "music_gdrive_folder_id": "",
-    "logo_gdrive_folder_id": "",
-    "gdrive_credentials_path": "",
+    "gdrive_credentials_path": str(_BUNDLED_CREDS) if _BUNDLED_CREDS.exists() else "",
     "cookies_browser": "",
     "cookies_file": "",
     "cookies_text": "",

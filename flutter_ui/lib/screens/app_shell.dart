@@ -55,7 +55,8 @@ class _AppShellState extends State<AppShell> {
   Future<void> _loadBackendConfig() async {
     final prefs = await SharedPreferences.getInstance();
     final host  = prefs.getString('backend_host') ?? '127.0.0.1';
-    final port  = prefs.getInt('backend_port')    ?? 8765;
+    var   port  = prefs.getInt('backend_port')    ?? 8765;
+    if (port == 8000) port = 8765; // migrate old default
     setState(() {
       ApiService.host = host;
       ApiService.port = port;

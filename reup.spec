@@ -18,7 +18,6 @@ a = Analysis(
     binaries=[*pw_binaries, *yt_binaries],
     datas=[
         ("backend", "backend"),
-        (".env", "."),
         *pw_datas,
         *ff_datas,
         *yt_datas,
