@@ -97,7 +97,16 @@ def _playwright_ready() -> bool:
 
 def _install_playwright(ui: _SetupWindow):
     ui.status("Đang tải Playwright Chromium (~150 MB)...")
-    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
+    if getattr(sys, "frozen", False):
+        # frozen exe: sys.executable can't run -m flags; use playwright's bundled driver
+        try:
+            from playwright._impl._driver import compute_driver_executable
+            driver = str(compute_driver_executable())
+            subprocess.run([driver, "install", "chromium"], check=False)
+        except Exception as e:
+            print(f"playwright install via driver failed: {e}", flush=True)
+    else:
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
     ui.status("Hoàn tất! Đang khởi động...")
 
 
