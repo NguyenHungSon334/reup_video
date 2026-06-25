@@ -105,6 +105,9 @@ jobs:
       - name: Build backend
         run: pyinstaller reup_mac.spec --noconfirm --clean
 
+      - name: Copy Playwright browsers into dist
+        run: cp -r pw_browsers dist/ReupVideo/pw_browsers
+
       - name: Package DMG
         run: |
           mkdir -p dist/dmg_staging/ReupVideo
