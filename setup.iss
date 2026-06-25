@@ -48,7 +48,7 @@ Source: "{#FlutterDir}\data\*";           DestDir: "{app}\data"; Flags: ignoreve
 ; Shortcut points to backend launcher (which starts Flutter)
 Name: "{group}\{#AppName}";              Filename: "{app}\{#BackendExe}"; IconFilename: "{app}\{#BackendExe}"
 Name: "{group}\Gỡ cài đặt {#AppName}";  Filename: "{uninstallexe}"
-Name: "{commondesktop}\{#AppName}";      Filename: "{app}\{#BackendExe}"; IconFilename: "{app}\{#BackendExe}"; Tasks: desktopicon
+Name: "{userdesktop}\{#AppName}";       Filename: "{app}\{#BackendExe}"; IconFilename: "{app}\{#BackendExe}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#BackendExe}"; \

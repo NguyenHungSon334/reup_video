@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/update_service.dart';
+import '../utils/open_url.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/top_bar.dart';
 import 'data_screen.dart';
@@ -21,6 +23,33 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _loadBackendConfig();
+    Future.delayed(const Duration(seconds: 3), _checkUpdate);
+  }
+
+  Future<void> _checkUpdate() async {
+    final update = await UpdateService.checkForUpdate();
+    if (update == null || !mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Có bản cập nhật mới'),
+        content: Text('Phiên bản ${update.version} đã sẵn sàng.\n'
+            'Phiên bản hiện tại: ${UpdateService.currentVersion}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Để sau'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              openUrl(update.url);
+            },
+            child: const Text('Tải về'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadBackendConfig() async {
