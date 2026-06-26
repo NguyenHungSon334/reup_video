@@ -50,6 +50,8 @@ def _backend_ready(timeout: int = 60) -> bool:
 
 def _launch_flutter() -> "subprocess.Popen | None":
     candidates = [
+        # macOS .app bundle — Flutter builds produce .app, not a plain binary
+        os.path.join(_EXE_DIR, "reup_flutter.app", "Contents", "MacOS", "reup_flutter"),
         os.path.join(_EXE_DIR, "reup_flutter.exe"),
         os.path.join(_EXE_DIR, "ReupVideo_UI.exe"),
         os.path.join(_EXE_DIR, "reup_flutter"),
@@ -86,4 +88,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

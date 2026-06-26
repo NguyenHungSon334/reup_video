@@ -1,12 +1,9 @@
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Callable
 
 import httpx
-
-_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 _MOBILE_UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
@@ -61,34 +58,38 @@ def _resolve_canonical(url: str, log: Callable) -> str:
 
 
 def _ytdlp(url: str, out_dir: str, log: Callable, cookies_file: str | None = None) -> str:
-    tpl = str(Path(out_dir) / "video.%(ext)s")
-    cmd = [
-        sys.executable, "-m", "yt_dlp",
-        "--no-playlist", "-o", tpl,
-        "--merge-output-format", "mp4",
-        "--add-header", "Referer:https://www.douyin.com",
-        "--add-header", f"User-Agent:{_MOBILE_UA}",
-    ]
-    if cookies_file and Path(cookies_file).exists():
-        cmd += ["--cookies", cookies_file]
-    cmd.append(url)
+    import yt_dlp
 
-    output_lines: list[str] = []
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace",
-        creationflags=_NO_WINDOW,
-    )
-    for line in proc.stdout:
-        line = line.rstrip()
-        if line:
-            output_lines.append(line)
-            log(line, "info")
-    proc.wait()
-    if proc.returncode != 0:
-        last = next((l for l in reversed(output_lines) if l.strip()), "no output")
-        raise RuntimeError(f"yt-dlp: {last}")
+    tpl = str(Path(out_dir) / "video.%(ext)s")
+
+    def _progress(d: dict) -> None:
+        if d.get("status") == "downloading":
+            pct = d.get("_percent_str", "").strip()
+            speed = d.get("_speed_str", "").strip()
+            if pct:
+                log(f"  {pct} {speed}".strip(), "info")
+        elif d.get("status") == "finished":
+            log(f"  Finished: {Path(d.get('filename', '')).name}", "info")
+
+    ydl_opts: dict = {
+        "outtmpl": tpl,
+        "noplaylist": True,
+        "merge_output_format": "mp4",
+        "http_headers": {
+            "Referer": "https://www.douyin.com",
+            "User-Agent": _MOBILE_UA,
+        },
+        "progress_hooks": [_progress],
+        "quiet": True,
+        "no_warnings": True,
+    }
+    if cookies_file and Path(cookies_file).exists():
+        ydl_opts["cookiefile"] = cookies_file
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ret = ydl.download([url])
+    if ret != 0:
+        raise RuntimeError(f"yt-dlp returned exit code {ret}")
     return _find_video(out_dir)
 
 

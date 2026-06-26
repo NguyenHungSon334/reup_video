@@ -18,6 +18,7 @@ a = Analysis(
     binaries=[*pw_binaries, *yt_binaries],
     datas=[
         ("backend", "backend"),
+        ("pw_browsers", "pw_browsers"),
         *pw_datas,
         *ff_datas,
         *yt_datas,
@@ -53,8 +54,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=["matplotlib", "numpy", "PIL", "cv2", "scipy"],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
@@ -82,6 +81,7 @@ app = BUNDLE(
         a.datas,
         strip=False,
         upx=True,
+        upx_exclude=["playwright", "node", "chromium", "chrome"],
         name="ReupVideo",
     ),
     name="ReupVideo.app",
