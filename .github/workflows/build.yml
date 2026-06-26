@@ -136,20 +136,21 @@ jobs:
 
           cp assets/icon.icns "$RESOURCES/icon.icns"
 
-          # Install.command: double-click to install + remove quarantine + open
-          cp assets/macos/Install.command dist/dmg_staging/Install.command
-          chmod +x dist/dmg_staging/Install.command
+          # Fix-If-Damaged.command: fallback for quarantine errors after drag-install
+          cp assets/macos/Install.command "dist/dmg_staging/Fix If Damaged.command"
+          chmod +x "dist/dmg_staging/Fix If Damaged.command"
 
           mkdir -p dist/installer_mac
           create-dmg \
             --volname "Reup Video" \
             --volicon "assets/icon.icns" \
             --window-pos 200 120 \
-            --window-size 600 450 \
+            --window-size 660 450 \
             --icon-size 100 \
-            --icon "Reup Video.app" 150 200 \
+            --icon "Reup Video.app" 160 200 \
             --hide-extension "Reup Video.app" \
-            --icon "Install.command" 450 200 \
+            --app-drop-link 500 200 \
+            --icon "Fix If Damaged.command" 160 350 \
             "dist/installer_mac/ReupVideo_mac_${{ env.APP_VERSION }}.dmg" \
             "dist/dmg_staging"
 
