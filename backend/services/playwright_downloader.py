@@ -33,9 +33,13 @@ _CDN_HOSTS = (
     "byteeffecttos.com",
     "toutiaoimg.com",
     "pstatp.com",
+    "snssdk.com",
+    "ixigua.com",
+    "iesdouyin.com",
+    "byteimg.com",
 )
 
-_VIDEO_PATH_MARKERS = ("/video/tos/", "/video/", "mime_type=video")
+_VIDEO_PATH_MARKERS = ("/video/tos/", "/video/", "mime_type=video", "video_mp4")
 
 
 def _is_video_url(url: str) -> bool:
@@ -48,9 +52,9 @@ def _is_video_url(url: str) -> bool:
     return ".mp4" in lower or any(m in url for m in _VIDEO_PATH_MARKERS)
 
 
-async def _intercept_video_url(video_page_url: str, log: Callable, timeout_ms: int = 30_000) -> str:
+async def _intercept_video_url(video_page_url: str, log: Callable, timeout_ms: int = 45_000) -> str:
     import sys
-    from playwright.async_api import async_playwright, Request
+    from playwright.async_api import async_playwright, Request, Response
 
     found: list[str] = []
 
@@ -78,38 +82,57 @@ async def _intercept_video_url(video_page_url: str, log: Callable, timeout_ms: i
             url = req.url
             if _is_video_url(url) and url not in found:
                 found.append(url)
-                log(f"  Intercepted: {url[:80]}...", "info")
+                log(f"  Intercepted request: {url[:80]}...", "info")
+
+        def on_response(resp: Response) -> None:
+            url = resp.url
+            ct = resp.headers.get("content-type", "")
+            if ("video" in ct or "octet-stream" in ct) and url not in found:
+                if _is_video_url(url) or any(h in url for h in _CDN_HOSTS):
+                    found.append(url)
+                    log(f"  Intercepted response: {url[:80]}...", "info")
 
         page = await ctx.new_page()
         page.on("request", on_request)
+        page.on("response", on_response)
 
         # Pre-visit to get session cookies
         log("  Pre-visiting douyin.com...", "info")
         try:
             await page.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=15_000)
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(3000)
         except Exception:
             pass
 
         log(f"  Navigating: {video_page_url}", "info")
         try:
-            await page.goto(video_page_url, wait_until="load", timeout=timeout_ms)
+            await page.goto(video_page_url, wait_until="domcontentloaded", timeout=timeout_ms)
         except Exception:
             pass
 
         # Wait for video element, then click to trigger play
         try:
-            await page.wait_for_selector("video", timeout=8_000)
+            await page.wait_for_selector("video", timeout=10_000)
             await page.click("video")
             log("  Clicked video player.", "info")
+            await page.wait_for_timeout(2000)
         except Exception:
             pass
 
         # Scroll to trigger lazy-load
         try:
             await page.evaluate("window.scrollBy(0, 300)")
+            await page.wait_for_timeout(1000)
         except Exception:
             pass
+
+        # Try pressing play via keyboard if no URL yet
+        if not found:
+            try:
+                await page.keyboard.press("Space")
+                await page.wait_for_timeout(2000)
+            except Exception:
+                pass
 
         # Wait up to 45s for CDN URL
         for _ in range(45):
@@ -117,13 +140,29 @@ async def _intercept_video_url(video_page_url: str, log: Callable, timeout_ms: i
                 break
             await page.wait_for_timeout(1000)
 
-        # Fallback: scan page HTML
+        # Fallback: scan page source for video URLs
         if not found:
             log("  No URL intercepted, scanning page source...", "info")
             try:
                 html = await page.content()
                 matches = _VIDEO_URL_RE.findall(html)
                 found.extend(m for m in matches if m not in found)
+            except Exception:
+                pass
+
+        # Fallback: extract src from <video> element
+        if not found:
+            log("  Checking video element src...", "info")
+            try:
+                src = await page.evaluate("""
+                    () => {
+                        const v = document.querySelector('video');
+                        return v ? (v.src || v.currentSrc || '') : '';
+                    }
+                """)
+                if src and src.startswith("http") and src not in found:
+                    found.append(src)
+                    log(f"  Got video src: {src[:80]}...", "info")
             except Exception:
                 pass
 

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_VERSION: "2.1.19"
+  APP_VERSION: "2.1.20"
 
 jobs:
   # ── Windows: backend EXE + Flutter desktop + Inno Setup ─────────────────

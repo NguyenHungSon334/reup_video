@@ -3,6 +3,13 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+# Browser cookie sources to try per platform (yt-dlp cookiesfrombrowser)
+_BROWSER_COOKIE_SOURCES: list[str] = (
+    ["chrome", "chromium", "safari", "firefox"]
+    if sys.platform == "darwin"
+    else ["chrome", "chromium", "firefox", "edge"]
+)
+
 import httpx
 
 _MOBILE_UA = (
@@ -57,7 +64,13 @@ def _resolve_canonical(url: str, log: Callable) -> str:
     return url
 
 
-def _ytdlp(url: str, out_dir: str, log: Callable, cookies_file: str | None = None) -> str:
+def _ytdlp(
+    url: str,
+    out_dir: str,
+    log: Callable,
+    cookies_file: str | None = None,
+    cookies_from_browser: str | None = None,
+) -> str:
     import yt_dlp
 
     tpl = str(Path(out_dir) / "video.%(ext)s")
@@ -85,6 +98,8 @@ def _ytdlp(url: str, out_dir: str, log: Callable, cookies_file: str | None = Non
     }
     if cookies_file and Path(cookies_file).exists():
         ydl_opts["cookiefile"] = cookies_file
+    if cookies_from_browser:
+        ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ret = ydl.download([url])
@@ -113,16 +128,19 @@ def download_video(
 
     canonical = _resolve_canonical(url, log)
 
-    # ── yt-dlp (fast, works if cookies are fresh) ────────────────────────────
-    for label, cf in [
-        ("yt-dlp (no cookies)", None),
-        ("yt-dlp (cookies file)", cookies_file if has_cookies else None),
-    ]:
-        if cf is None and label != "yt-dlp (no cookies)":
-            continue
+    # ── yt-dlp attempts ───────────────────────────────────────────────────────
+    ytdlp_variants: list[tuple[str, str | None, str | None]] = [
+        ("yt-dlp (no cookies)", None, None),
+    ]
+    if has_cookies:
+        ytdlp_variants.append(("yt-dlp (cookies file)", cookies_file, None))
+    for browser in _BROWSER_COOKIE_SOURCES:
+        ytdlp_variants.append((f"yt-dlp (browser:{browser})", None, browser))
+
+    for label, cf, browser in ytdlp_variants:
         log(f"Trying {label}...", "info")
         try:
-            path = _ytdlp(canonical, out_dir, log, cookies_file=cf)
+            path = _ytdlp(canonical, out_dir, log, cookies_file=cf, cookies_from_browser=browser)
             log(f"Downloaded: {Path(path).name}", "success")
             return path
         except Exception as e:
