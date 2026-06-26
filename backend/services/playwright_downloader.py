@@ -49,32 +49,25 @@ def _is_video_url(url: str) -> bool:
 
 
 async def _intercept_video_url(video_page_url: str, log: Callable, timeout_ms: int = 30_000) -> str:
+    import sys
     from playwright.async_api import async_playwright, Request
 
     found: list[str] = []
 
+    # --no-sandbox / --disable-dev-shm-usage are Linux-only; omit on macOS/Windows
+    base_args = ["--disable-blink-features=AutomationControlled", "--disable-infobars", "--window-size=1280,720"]
+    if sys.platform == "linux":
+        base_args += ["--no-sandbox", "--disable-dev-shm-usage", "--disable-setuid-sandbox"]
+
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-setuid-sandbox",
-                "--disable-infobars",
-                "--window-size=1280,720",
-            ],
-        )
+        browser = await p.chromium.launch(headless=True, args=base_args)
         ctx = await browser.new_context(
             user_agent=_DESKTOP_UA,
             viewport={"width": 1280, "height": 720},
             locale="zh-CN",
             timezone_id="Asia/Shanghai",
-            extra_http_headers={
-                "Accept-Language": "zh-CN,zh;q=0.9",
-            },
+            extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
         )
-        # Hide automation signals
         await ctx.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
             Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
@@ -83,17 +76,15 @@ async def _intercept_video_url(video_page_url: str, log: Callable, timeout_ms: i
 
         def on_request(req: Request) -> None:
             url = req.url
-            if _is_video_url(url):
-                clean = url.split("?")[0] + ("?" + url.split("?")[1] if "?" in url else "")
-                if clean not in found:
-                    found.append(url)
-                    log(f"  Intercepted video URL: {url[:80]}...", "info")
+            if _is_video_url(url) and url not in found:
+                found.append(url)
+                log(f"  Intercepted: {url[:80]}...", "info")
 
         page = await ctx.new_page()
         page.on("request", on_request)
 
-        # Pre-visit homepage to get fresh session cookies (required by Douyin)
-        log("  Pre-visiting douyin.com to get session cookies...", "info")
+        # Pre-visit to get session cookies
+        log("  Pre-visiting douyin.com...", "info")
         try:
             await page.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=15_000)
             await page.wait_for_timeout(2000)
@@ -102,17 +93,31 @@ async def _intercept_video_url(video_page_url: str, log: Callable, timeout_ms: i
 
         log(f"  Navigating: {video_page_url}", "info")
         try:
-            await page.goto(video_page_url, wait_until="networkidle", timeout=timeout_ms)
+            await page.goto(video_page_url, wait_until="load", timeout=timeout_ms)
         except Exception:
-            pass  # timeout fine — video requests may already be in flight
+            pass
 
-        # Wait up to 30s for video player to request CDN URL
-        for _ in range(30):
+        # Wait for video element, then click to trigger play
+        try:
+            await page.wait_for_selector("video", timeout=8_000)
+            await page.click("video")
+            log("  Clicked video player.", "info")
+        except Exception:
+            pass
+
+        # Scroll to trigger lazy-load
+        try:
+            await page.evaluate("window.scrollBy(0, 300)")
+        except Exception:
+            pass
+
+        # Wait up to 45s for CDN URL
+        for _ in range(45):
             if found:
                 break
             await page.wait_for_timeout(1000)
 
-        # If not found via intercept, try extracting from page HTML/JS
+        # Fallback: scan page HTML
         if not found:
             log("  No URL intercepted, scanning page source...", "info")
             try:
