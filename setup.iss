@@ -42,7 +42,7 @@ Source: "dist\{#BackendExe}"; DestDir: "{app}"; Flags: ignoreversion
 ; Flutter desktop app + all required DLLs and assets
 Source: "{#FlutterDir}\{#FlutterExe}";   DestDir: "{app}"; Flags: ignoreversion
 Source: "{#FlutterDir}\*.dll";            DestDir: "{app}"; Flags: ignoreversion
-Source: "{#FlutterDir}\plugins\*";        DestDir: "{app}\plugins"; Flags: ignoreversion recursesubdirs
+Source: "{#FlutterDir}\plugins\*";        DestDir: "{app}\plugins"; Flags: ignoreversion recursesubdirs skipifsourcedoesntexist
 Source: "{#FlutterDir}\data\*";           DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs
 
 [Icons]

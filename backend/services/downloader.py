@@ -105,8 +105,8 @@ def download_video(
     url: str,
     out_dir: str,
     log: Callable[[str, str], None],
-    cookies_browser: str | None = None,
     cookies_file: str | None = None,
+    **_ignored,
 ) -> str:
     errors: list[str] = []
     has_cookies = bool(cookies_file and Path(cookies_file).exists())
