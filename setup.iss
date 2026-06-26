@@ -1,7 +1,7 @@
 ; Inno Setup — Reup Video installer (backend + Flutter desktop)
 
 #define AppName      "Reup Video"
-#define AppVersion   "2.1.16"
+#define AppVersion   "2.1.17"
 #define AppPublisher "ReupVideo"
 #define BackendExe   "ReupVideo.exe"
 #define FlutterExe   "reup_flutter.exe"

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_VERSION: "2.1.16"
+  APP_VERSION: "2.1.17"
 
 jobs:
   # ── Windows: backend EXE + Flutter desktop + Inno Setup ─────────────────
@@ -85,6 +85,9 @@ jobs:
           cd flutter_ui
           flutter config --enable-macos-desktop
           flutter create --platforms=macos . --project-name reup_flutter
+          # Allow Flutter to reach backend on localhost:8765 (blocked by App Sandbox by default)
+          /usr/libexec/PlistBuddy -c "Add :com.apple.security.network.client bool true" macos/Runner/Release.entitlements
+          /usr/libexec/PlistBuddy -c "Add :com.apple.security.network.client bool true" macos/Runner/DebugProfile.entitlements
           flutter build macos --release
 
       - uses: actions/setup-python@v5.3.0
