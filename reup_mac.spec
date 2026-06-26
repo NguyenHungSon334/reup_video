@@ -89,8 +89,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleName": "Reup Video",
         "CFBundleDisplayName": "Reup Video",
-        "CFBundleVersion": "2.1.15",
-        "CFBundleShortVersionString": "2.1.15",
+        "CFBundleVersion": "2.1.16",
+        "CFBundleShortVersionString": "2.1.16",
         "NSHighResolutionCapable": True,
         "LSMinimumSystemVersion": "10.15",
     },

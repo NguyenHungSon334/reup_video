@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_VERSION: "2.1.15"
+  APP_VERSION: "2.1.16"
 
 jobs:
   # ── Windows: backend EXE + Flutter desktop + Inno Setup ─────────────────
@@ -110,22 +110,23 @@ jobs:
 
       - name: Package DMG
         run: |
-          # ── Build a single .app containing backend + Flutter + browsers ──────
-          BUNDLE="dist/dmg_staging/Reup Video.app/Contents/MacOS"
+          # Use PyInstaller's own bundle (correct Frameworks/Python layout) as base
+          mkdir -p dist/dmg_staging
+          cp -r dist/ReupVideo.app "dist/dmg_staging/Reup Video.app"
+
+          MACOS="dist/dmg_staging/Reup Video.app/Contents/MacOS"
           RESOURCES="dist/dmg_staging/Reup Video.app/Contents/Resources"
-          mkdir -p "$BUNDLE" "$RESOURCES"
 
-          # All PyInstaller COLLECT files (binary needs support .so files)
-          cp -r dist/ReupVideo/. "$BUNDLE/"
-          mv "$BUNDLE/ReupVideo" "$BUNDLE/ReupVideo-backend"
+          # Rename main executable
+          mv "$MACOS/ReupVideo" "$MACOS/ReupVideo-backend"
 
-          # Playwright browsers (copied manually — PyInstaller can't process Chromium .app)
-          cp -r pw_browsers "$BUNDLE/pw_browsers"
+          # Flutter UI → Contents/Resources/ (correct bundle layout)
+          cp -r "flutter_ui/build/macos/Build/Products/Release/reup_flutter.app" "$RESOURCES/"
 
-          # Flutter UI nested inside the bundle
-          cp -r "flutter_ui/build/macos/Build/Products/Release/reup_flutter.app" "$BUNDLE/"
+          # Playwright browsers → Contents/Resources/ (PyInstaller can't process Chromium .app)
+          cp -r pw_browsers "$RESOURCES/pw_browsers"
 
-          # Info.plist — substitute version placeholder
+          # Replace PyInstaller Info.plist with ours
           sed "s/APP_VERSION_PLACEHOLDER/${{ env.APP_VERSION }}/g" \
             assets/macos/Info.plist \
             > "dist/dmg_staging/Reup Video.app/Contents/Info.plist"

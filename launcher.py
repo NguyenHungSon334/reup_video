@@ -12,8 +12,9 @@ if getattr(sys, 'frozen', False):
     _EXE_DIR = os.path.dirname(sys.executable)
     if sys.platform == "darwin":
         _LOG_DIR = os.path.join(os.path.expanduser("~/Library/Application Support"), "ReupVideo")
-        # macOS COLLECT mode: pw_browsers sits next to the executable
-        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(_EXE_DIR, "pw_browsers")
+        # macOS bundle: executable in Contents/MacOS/, resources in Contents/Resources/
+        _BUNDLE_RESOURCES = os.path.join(_EXE_DIR, "..", "Resources")
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(_BUNDLE_RESOURCES, "pw_browsers")
     else:
         _LOG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "ReupVideo")
         # Windows single-file: pw_browsers extracted into _MEIPASS
@@ -50,8 +51,8 @@ def _backend_ready(timeout: int = 60) -> bool:
 
 def _launch_flutter() -> "subprocess.Popen | None":
     candidates = [
-        # macOS .app bundle — Flutter builds produce .app, not a plain binary
-        os.path.join(_EXE_DIR, "reup_flutter.app", "Contents", "MacOS", "reup_flutter"),
+        # macOS bundle: reup_flutter.app in Contents/Resources/
+        os.path.join(_EXE_DIR, "..", "Resources", "reup_flutter.app", "Contents", "MacOS", "reup_flutter"),
         os.path.join(_EXE_DIR, "reup_flutter.exe"),
         os.path.join(_EXE_DIR, "ReupVideo_UI.exe"),
         os.path.join(_EXE_DIR, "reup_flutter"),
