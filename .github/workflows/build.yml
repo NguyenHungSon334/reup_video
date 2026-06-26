@@ -114,7 +114,7 @@ jobs:
           # Copy entire COLLECT directory — binary alone cannot run without support files
           cp -r dist/ReupVideo/. dist/dmg_staging/ReupVideo/
           mv dist/dmg_staging/ReupVideo/ReupVideo dist/dmg_staging/ReupVideo/ReupVideo-backend
-          # pw_browsers already bundled via spec datas; copy ensures it lands next to binary
+          # pw_browsers copied here (not via spec — PyInstaller can't process Chromium .app)
           cp -r pw_browsers dist/dmg_staging/ReupVideo/pw_browsers
           cp -r "flutter_ui/build/macos/Build/Products/Release/reup_flutter.app" \
                 dist/dmg_staging/ReupVideo/
