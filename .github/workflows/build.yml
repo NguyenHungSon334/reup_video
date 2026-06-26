@@ -126,31 +126,13 @@ jobs:
           cp -r "flutter_ui/build/macos/Build/Products/Release/reup_flutter.app" "$BUNDLE/"
 
           # Shell script entry point: macOS opens this, it launches the backend
-          cat > "$BUNDLE/launcher" << 'SCRIPT'
-#!/bin/bash
-DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$DIR/ReupVideo-backend"
-SCRIPT
+          cp assets/macos/launcher "$BUNDLE/launcher"
           chmod +x "$BUNDLE/launcher"
 
-          # Info.plist for the wrapper .app
-          cat > "dist/dmg_staging/Reup Video.app/Contents/Info.plist" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleExecutable</key><string>launcher</string>
-  <key>CFBundleIdentifier</key><string>com.reupvideo.app</string>
-  <key>CFBundleName</key><string>Reup Video</string>
-  <key>CFBundleDisplayName</key><string>Reup Video</string>
-  <key>CFBundleVersion</key><string>${{ env.APP_VERSION }}</string>
-  <key>CFBundleShortVersionString</key><string>${{ env.APP_VERSION }}</string>
-  <key>CFBundleIconFile</key><string>icon</string>
-  <key>LSMinimumSystemVersion</key><string>10.15</string>
-  <key>NSHighResolutionCapable</key><true/>
-</dict>
-</plist>
-PLIST
+          # Info.plist — substitute version placeholder
+          sed "s/APP_VERSION_PLACEHOLDER/${{ env.APP_VERSION }}/g" \
+            assets/macos/Info.plist \
+            > "dist/dmg_staging/Reup Video.app/Contents/Info.plist"
 
           cp assets/icon.icns "$RESOURCES/icon.icns"
 
