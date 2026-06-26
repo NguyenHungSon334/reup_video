@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_VERSION: "2.1.17"
+  APP_VERSION: "2.1.18"
 
 jobs:
   # ── Windows: backend EXE + Flutter desktop + Inno Setup ─────────────────
@@ -136,16 +136,20 @@ jobs:
 
           cp assets/icon.icns "$RESOURCES/icon.icns"
 
+          # Install.command: double-click to install + remove quarantine + open
+          cp assets/macos/Install.command dist/dmg_staging/Install.command
+          chmod +x dist/dmg_staging/Install.command
+
           mkdir -p dist/installer_mac
           create-dmg \
             --volname "Reup Video" \
             --volicon "assets/icon.icns" \
             --window-pos 200 120 \
-            --window-size 600 400 \
+            --window-size 600 450 \
             --icon-size 100 \
-            --icon "Reup Video.app" 150 190 \
+            --icon "Reup Video.app" 150 200 \
             --hide-extension "Reup Video.app" \
-            --app-drop-link 450 190 \
+            --icon "Install.command" 450 200 \
             "dist/installer_mac/ReupVideo_mac_${{ env.APP_VERSION }}.dmg" \
             "dist/dmg_staging"
 
