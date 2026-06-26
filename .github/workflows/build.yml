@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_VERSION: "2.0.10"
+  APP_VERSION: "2.0.13"
 
 jobs:
   # ── Windows: backend EXE + Flutter desktop + Inno Setup ─────────────────
@@ -110,27 +110,62 @@ jobs:
 
       - name: Package DMG
         run: |
-          mkdir -p dist/dmg_staging/ReupVideo
-          # Copy entire COLLECT directory — binary alone cannot run without support files
-          cp -r dist/ReupVideo/. dist/dmg_staging/ReupVideo/
-          mv dist/dmg_staging/ReupVideo/ReupVideo dist/dmg_staging/ReupVideo/ReupVideo-backend
-          # pw_browsers copied here (not via spec — PyInstaller can't process Chromium .app)
-          cp -r pw_browsers dist/dmg_staging/ReupVideo/pw_browsers
-          cp -r "flutter_ui/build/macos/Build/Products/Release/reup_flutter.app" \
-                dist/dmg_staging/ReupVideo/
+          # ── Build a single .app containing backend + Flutter + browsers ──────
+          BUNDLE="dist/dmg_staging/Reup Video.app/Contents/MacOS"
+          RESOURCES="dist/dmg_staging/Reup Video.app/Contents/Resources"
+          mkdir -p "$BUNDLE" "$RESOURCES"
+
+          # All PyInstaller COLLECT files (binary needs support .so files)
+          cp -r dist/ReupVideo/. "$BUNDLE/"
+          mv "$BUNDLE/ReupVideo" "$BUNDLE/ReupVideo-backend"
+
+          # Playwright browsers (copied manually — PyInstaller can't process Chromium .app)
+          cp -r pw_browsers "$BUNDLE/pw_browsers"
+
+          # Flutter UI nested inside the bundle
+          cp -r "flutter_ui/build/macos/Build/Products/Release/reup_flutter.app" "$BUNDLE/"
+
+          # Shell script entry point: macOS opens this, it launches the backend
+          cat > "$BUNDLE/launcher" << 'SCRIPT'
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/ReupVideo-backend"
+SCRIPT
+          chmod +x "$BUNDLE/launcher"
+
+          # Info.plist for the wrapper .app
+          cat > "dist/dmg_staging/Reup Video.app/Contents/Info.plist" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>launcher</string>
+  <key>CFBundleIdentifier</key><string>com.reupvideo.app</string>
+  <key>CFBundleName</key><string>Reup Video</string>
+  <key>CFBundleDisplayName</key><string>Reup Video</string>
+  <key>CFBundleVersion</key><string>${{ env.APP_VERSION }}</string>
+  <key>CFBundleShortVersionString</key><string>${{ env.APP_VERSION }}</string>
+  <key>CFBundleIconFile</key><string>icon</string>
+  <key>LSMinimumSystemVersion</key><string>10.15</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
+
+          cp assets/icon.icns "$RESOURCES/icon.icns"
 
           mkdir -p dist/installer_mac
           create-dmg \
             --volname "Reup Video" \
             --volicon "assets/icon.icns" \
             --window-pos 200 120 \
-            --window-size 640 400 \
+            --window-size 600 400 \
             --icon-size 100 \
-            --icon "reup_flutter.app" 160 190 \
-            --hide-extension "reup_flutter.app" \
-            --app-drop-link 480 190 \
+            --icon "Reup Video.app" 150 190 \
+            --hide-extension "Reup Video.app" \
+            --app-drop-link 450 190 \
             "dist/installer_mac/ReupVideo_mac_${{ env.APP_VERSION }}.dmg" \
-            "dist/dmg_staging/ReupVideo"
+            "dist/dmg_staging"
 
       - uses: actions/upload-artifact@v4.4.3
         with:
