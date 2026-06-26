@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName',      u'ReupVideo'),
           StringStruct(u'FileDescription',  u'Reup Video - Douyin Downloader'),
-          StringStruct(u'FileVersion',      u'2.0.14'),
+          StringStruct(u'FileVersion',      u'2.1.15'),
           StringStruct(u'InternalName',     u'ReupVideo'),
           StringStruct(u'LegalCopyright',   u'2024 ReupVideo'),
           StringStruct(u'OriginalFilename', u'ReupVideo.exe'),
           StringStruct(u'ProductName',      u'Reup Video'),
-          StringStruct(u'ProductVersion',   u'2.0.14'),
+          StringStruct(u'ProductVersion',   u'2.1.15'),
         ]
       )
     ]),

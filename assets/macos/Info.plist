@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleExecutable</key><string>launcher</string>
+  <key>CFBundleExecutable</key><string>ReupVideo-backend</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIdentifier</key><string>com.reupvideo.app</string>
   <key>CFBundleName</key><string>Reup Video</string>
@@ -12,5 +12,6 @@
   <key>CFBundleIconFile</key><string>icon</string>
   <key>LSMinimumSystemVersion</key><string>10.15</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>LSUIElement</key><true/>
 </dict>
 </plist>

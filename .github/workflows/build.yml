@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_VERSION: "2.0.14"
+  APP_VERSION: "2.1.15"
 
 jobs:
   # ── Windows: backend EXE + Flutter desktop + Inno Setup ─────────────────
@@ -124,10 +124,6 @@ jobs:
 
           # Flutter UI nested inside the bundle
           cp -r "flutter_ui/build/macos/Build/Products/Release/reup_flutter.app" "$BUNDLE/"
-
-          # Shell script entry point: macOS opens this, it launches the backend
-          cp assets/macos/launcher "$BUNDLE/launcher"
-          chmod +x "$BUNDLE/launcher"
 
           # Info.plist — substitute version placeholder
           sed "s/APP_VERSION_PLACEHOLDER/${{ env.APP_VERSION }}/g" \
