@@ -45,6 +45,25 @@ _CDN_HOSTS = (
 _VIDEO_PATH_MARKERS = ("/video/tos/", "/video/", "mime_type=video", "video_mp4")
 
 
+def _extract_aweme_id(url: str) -> str | None:
+    """Pull the target Douyin video id from the canonical page URL."""
+    m = re.search(r"/video/(\d+)", url) or re.search(r"(\d{15,20})", url)
+    return m.group(1) if m else None
+
+
+def _pick_target_url(found: list[str]) -> str | None:
+    """Choose the correct CDN URL from intercepted candidates.
+
+    `found` is ordered by capture time; the target autoplays first, so earlier
+    entries are the target (feed-advancing actions are disabled, so siblings
+    should not appear). Among the target's own variants, prefer the
+    watermark-free one ('play' over 'playwm'). Returns None if empty.
+    """
+    if not found:
+        return None
+    return next((u for u in found if "playwm" not in u), found[0])
+
+
 def _save_cookies(cookies: list[dict], log: Callable) -> None:
     """Export Playwright session cookies to Netscape format for yt-dlp.
 
@@ -170,8 +189,9 @@ class _BrowserWorker:
 
     async def _fetch(self, video_page_url: str, log: Callable, timeout_ms: int = 45_000) -> str:
         await self._ensure_browser(log)
-        from playwright.async_api import Request, Response
+        from playwright.async_api import Request, Response, Route
 
+        target_id = _extract_aweme_id(video_page_url)
         found: list[str] = []
 
         def on_request(req: "Request") -> None:
@@ -188,9 +208,27 @@ class _BrowserWorker:
                     found.append(url)
                     log(f"  Intercepted response: {url[:80]}...", "info")
 
+        async def block_extra_videos(route: "Route") -> None:
+            # Capture the URL string (the listener already did), then abort any
+            # video CDN request beyond the first — this kills recommended/feed
+            # prefetch so a sibling video can never be downloaded. We never need
+            # the bytes in-browser; the file is fetched separately via httpx.
+            url = route.request.url
+            if _is_video_url(url) and found and url != found[0]:
+                try:
+                    await route.abort()
+                    return
+                except Exception:
+                    pass
+            try:
+                await route.continue_()
+            except Exception:
+                pass
+
         page = await self._ctx.new_page()
         page.on("request", on_request)
         page.on("response", on_response)
+        await page.route("**/*", block_extra_videos)
         try:
             # Direct navigation to the target only — no homepage feed to confuse
             # interception (cookies already warm on the shared context).
@@ -200,6 +238,14 @@ class _BrowserWorker:
             except Exception:
                 pass
 
+            # Guard: confirm we actually landed on the requested video, not a
+            # redirect to a feed/recommended page.
+            if target_id and target_id not in page.url:
+                log(f"  ⚠ Page drifted to {page.url[:80]} (target {target_id}); "
+                    "trusting first-captured URL", "warn")
+
+            # Trigger playback IN PLACE. No scroll / no Space — those advance the
+            # vertical feed to the next video and would intercept the wrong clip.
             try:
                 await page.wait_for_selector("video", timeout=10_000)
                 await page.click("video")
@@ -208,21 +254,14 @@ class _BrowserWorker:
             except Exception:
                 pass
 
-            try:
-                await page.evaluate("window.scrollBy(0, 300)")
-                await page.wait_for_timeout(1000)
-            except Exception:
-                pass
-
-            if not found:
-                try:
-                    await page.keyboard.press("Space")
-                    await page.wait_for_timeout(2000)
-                except Exception:
-                    pass
-
+            # Wait for interception; stop early once we have a watermark-free URL.
             for _ in range(45):
+                if any("playwm" not in u for u in found):
+                    break
                 if found:
+                    # Have a (watermarked) target URL — short grace for the clean
+                    # variant, then accept what we have.
+                    await page.wait_for_timeout(1000)
                     break
                 await page.wait_for_timeout(1000)
 
@@ -239,7 +278,9 @@ class _BrowserWorker:
                 try:
                     src = await page.evaluate(
                         "() => { const v = document.querySelector('video');"
-                        " return v ? (v.src || v.currentSrc || '') : ''; }")
+                        " return v ? (v.currentSrc || v.src || '') : ''; }")
+                    # MSE players expose a blob: URL that can't be downloaded —
+                    # only accept a real http(s) source here.
                     if src and src.startswith("http") and src not in found:
                         found.append(src)
                         log(f"  Got video src: {src[:80]}...", "info")
@@ -248,11 +289,10 @@ class _BrowserWorker:
         finally:
             await page.close()  # free the tab; browser stays alive for reuse
 
-        if not found:
+        url = _pick_target_url(found)
+        if not url:
             raise RuntimeError("Playwright: no video URL intercepted from Douyin page")
-
-        # Prefer URLs without watermark (avoid 'playwm', prefer 'play')
-        return next((u for u in found if "playwm" not in u), found[0])
+        return url
 
     def fetch_video_url(self, url: str, log: Callable, timeout: float = 120) -> str:
         self._ensure_loop()
@@ -301,3 +341,19 @@ def download_via_playwright(url: str, out_dir: str, log: Callable) -> str:
     log(f"  Got video URL.", "info")
     _download_url(video_url, out_path, log)
     return out_path
+
+
+if __name__ == "__main__":
+    # Offline self-check for the pure selection logic (no browser / network).
+    assert _extract_aweme_id("https://www.douyin.com/video/7412345678901234567") \
+        == "7412345678901234567"
+    assert _extract_aweme_id("https://v.douyin.com/abc/") is None
+
+    # First-captured wins; among target variants prefer the clean ('play') one.
+    wm   = "https://v26-web.douyinvod.com/aaa/playwm/x.mp4"
+    clean = "https://v26-web.douyinvod.com/aaa/play/x.mp4"
+    assert _pick_target_url([wm, clean]) == clean          # prefer non-watermark
+    assert _pick_target_url([wm]) == wm                    # only watermarked → use it
+    assert _pick_target_url([clean]) == clean
+    assert _pick_target_url([]) is None
+    print("OK — playwright_downloader selection self-check passed")
