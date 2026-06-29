@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Callable
 
+from backend.services.progress import throttled
+
 import base64
 
 import sys
@@ -202,11 +204,13 @@ def upload_gdrive(src: str, folder_id: str, log: Callable[[str, str], None],
             body=file_metadata, media_body=media, fields="id,name,webViewLink",
             supportsAllDrives=True
         )
+        emit = throttled(log)
         resp = None
         while resp is None:
             status, resp = req.next_chunk()
             if status:
-                log(f"  {int(status.progress() * 100)}%", "info")
+                pct = status.progress() * 100
+                emit(f"  {int(pct)}%", "info", pct=pct)
 
         log(f"✓ File Name: {resp.get('name')}", "info")
         log(f"✓ File ID:   {resp.get('id')}", "info")

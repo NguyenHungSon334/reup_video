@@ -3,14 +3,19 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-# Browser cookie sources to try per platform (yt-dlp cookiesfrombrowser)
+# Browser cookie sources to try per platform (yt-dlp cookiesfrombrowser).
+# Windows: skipped — Chrome 127+ app-bound encryption makes cookiesfrombrowser
+# fail with DPAPI errors. The auto-saved douyin.cookies.txt is used instead.
 _BROWSER_COOKIE_SOURCES: list[str] = (
     ["chrome", "chromium", "safari", "firefox"]
     if sys.platform == "darwin"
+    else [] if sys.platform == "win32"
     else ["chrome", "chromium", "firefox", "edge"]
 )
 
 import httpx
+
+from backend.services.progress import throttled
 
 _MOBILE_UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
@@ -74,13 +79,15 @@ def _ytdlp(
     import yt_dlp
 
     tpl = str(Path(out_dir) / "video.%(ext)s")
+    emit = throttled(log)
 
     def _progress(d: dict) -> None:
         if d.get("status") == "downloading":
-            pct = d.get("_percent_str", "").strip()
+            pct_str = d.get("_percent_str", "").strip()
             speed = d.get("_speed_str", "").strip()
-            if pct:
-                log(f"  {pct} {speed}".strip(), "info")
+            if pct_str:
+                pct = float(re.sub(r"[^\d.]", "", pct_str) or 0)
+                emit(f"  {pct_str} {speed}".strip(), "info", pct=pct)
         elif d.get("status") == "finished":
             log(f"  Finished: {Path(d.get('filename', '')).name}", "info")
 
@@ -129,9 +136,12 @@ def download_video(
     canonical = _resolve_canonical(url, log)
 
     # ── yt-dlp attempts ───────────────────────────────────────────────────────
-    ytdlp_variants: list[tuple[str, str | None, str | None]] = [
-        ("yt-dlp (no cookies)", None, None),
-    ]
+    # Douyin always rejects cookieless requests ("fresh cookies needed"), so skip
+    # that dead attempt and go straight to cookies → Playwright.
+    is_douyin = "douyin" in canonical
+    ytdlp_variants: list[tuple[str, str | None, str | None]] = []
+    if not is_douyin:
+        ytdlp_variants.append(("yt-dlp (no cookies)", None, None))
     if has_cookies:
         ytdlp_variants.append(("yt-dlp (cookies file)", cookies_file, None))
     for browser in _BROWSER_COOKIE_SOURCES:

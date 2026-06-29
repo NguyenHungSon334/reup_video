@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
+import '../services/update_service.dart';
 
 class Sidebar extends StatelessWidget {
   final int navIdx;
@@ -40,11 +41,11 @@ class Sidebar extends StatelessWidget {
                       color: Colors.white, size: 20),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'ReupPro',
                         style: TextStyle(
                           color: kText,
@@ -54,8 +55,8 @@ class Sidebar extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'v2.4.0',
-                        style: TextStyle(
+                        'v${UpdateService.currentVersion}',
+                        style: const TextStyle(
                           color: kMuted,
                           fontSize: 12,
                           fontWeight: FontWeight.w500,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../constants/colors.dart';
@@ -10,8 +11,8 @@ import '../utils/douyin_parser.dart';
 import '../widgets/log_panel.dart';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
-const double _kRowH         = 38;
-const double _kHeaderH      = 36;
+const double _kRowH         = 48;
+const double _kHeaderH      = 42;
 const double _kColCheck     = 44;
 const double _kColIndex     = 50;
 const double _kColToggle    = 64;
@@ -33,11 +34,15 @@ class _RowState {
 // ── Log notifier — decouples log/progress updates from table rebuilds ─────────
 
 class _LogNotifier extends ChangeNotifier {
+  static const int _maxLogs = 500; // cap so long runs don't blow up memory/GPU
   final logs = <LogEntry>[];
   double progress = 0;
 
   void add(LogEntry e) {
     logs.add(e);
+    if (logs.length > _maxLogs) {
+      logs.removeRange(0, logs.length - _maxLogs);
+    }
     notifyListeners();
   }
 
@@ -86,7 +91,13 @@ class _DataScreenState extends State<DataScreen> {
   final _logoEnabled  = <String, bool>{};
   final _musicEnabled = <String, bool>{};
   final _rowStates    = <String, _RowState>{};
+  // Per-row progress notifiers: streaming updates rebuild only the one row's
+  // progress cell, never the whole screen (prevents GPU-context-lost freezes).
+  final _rowNotifiers = <String, ValueNotifier<_RowState?>>{};
   final _hScrollCtrl  = ScrollController();
+
+  Set<String>? _visibleFields; // null = not yet initialized
+  double _logPaneHeight = 180;
 
   // Phase 1: cached column widths — invalidated when _data changes
   Map<String, double>? _colWidths;
@@ -111,6 +122,9 @@ class _DataScreenState extends State<DataScreen> {
     _hScrollCtrl.dispose();
     _logNotifier.dispose();
     _selectionNotifier.dispose();
+    for (final n in _rowNotifiers.values) {
+      n.dispose();
+    }
     super.dispose();
   }
 
@@ -195,11 +209,19 @@ class _DataScreenState extends State<DataScreen> {
         _data = reversed;
         _filteredCache = null;
         _colWidths = null; // Phase 1: invalidate on new data
+        if (_visibleFields == null) {
+          final allFields = reversed.fields.where((f) => f != 'Nhạc').toSet();
+          _visibleFields = allFields.where((f) =>
+              reversed.records.any((r) => (r[f] ?? '').isNotEmpty)).toSet();
+        }
         // Drop finished row states for records no longer in the loaded set
         if (_rowStates.isNotEmpty) {
           final liveIds = reversed.records.map((r) => r['_record_id'] ?? '').toSet();
-          _rowStates.removeWhere((id, state) =>
-              state.progress >= 1.0 && !liveIds.contains(id));
+          _rowStates.removeWhere((id, state) {
+            final drop = state.progress >= 1.0 && !liveIds.contains(id);
+            if (drop) _rowNotifiers.remove(id)?.dispose();
+            return drop;
+          });
         }
         if (_statusFilter != null) {
           final existing = reversed.records
@@ -287,6 +309,81 @@ class _DataScreenState extends State<DataScreen> {
     return widths;
   }
 
+  // ── Column visibility ───────────────────────────────────────────────────────
+
+  Set<String> _computeDefaultVisibleFields() {
+    if (_data == null) return {};
+    final fields = _data!.fields.where((f) => f != 'Nhạc').toList();
+    return fields.where((f) => _data!.records.any((r) => (r[f] ?? '').isNotEmpty)).toSet();
+  }
+
+  Future<void> _showColumnPicker(BuildContext context) async {
+    if (_data == null) return;
+    final fields = _data!.fields.where((f) => f != 'Nhạc').toList();
+    final current = Set<String>.from(_visibleFields ?? fields.toSet());
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, ss) => AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          title: const Text('Cột hiển thị',
+              style: TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w700)),
+          content: SizedBox(
+            width: 280,
+            height: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Expanded(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: fields.map((f) => CheckboxListTile(
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(f, style: const TextStyle(fontSize: 12.5, color: kText)),
+                      value: current.contains(f),
+                      activeColor: kAccent,
+                      onChanged: (v) => ss(() => v! ? current.add(f) : current.remove(f)),
+                    )).toList(),
+                  ),
+                ),
+                const Divider(height: 16),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => ss(() => current.addAll(fields)),
+                      child: const Text('Tất cả', style: TextStyle(fontSize: 12, color: kAccent)),
+                    ),
+                    TextButton(
+                      onPressed: () => ss(() {
+                        current.clear();
+                        current.addAll(_computeDefaultVisibleFields());
+                      }),
+                      child: const Text('Mặc định', style: TextStyle(fontSize: 12, color: kMuted)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx2),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kAccent, foregroundColor: Colors.white, elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Xong', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mounted) setState(() { _visibleFields = current; _colWidths = null; });
+  }
+
   // ── Log helpers ─────────────────────────────────────────────────────────────
 
   void _addLog(String message, [LogType type = LogType.info]) {
@@ -298,8 +395,18 @@ class _DataScreenState extends State<DataScreen> {
     _logNotifier.add(LogEntry('[$t]', message, type));
   }
 
+  ValueNotifier<_RowState?> _rowNotifier(String id) =>
+      _rowNotifiers.putIfAbsent(id, () => ValueNotifier<_RowState?>(null));
+
   void _setRowState(String id, _RowState s) {
-    if (mounted) setState(() => _rowStates[id] = s);
+    if (!mounted) return;
+    _rowNotifier(id).value = s; // per-row rebuild, no full-screen setState
+    if (_rowStates.containsKey(id)) {
+      _rowStates[id] = s; // bookkeeping only (no rebuild) for the common case
+    } else {
+      // First state for this row → reveal the progress column once.
+      setState(() => _rowStates[id] = s);
+    }
   }
 
   // ── Selection helpers ───────────────────────────────────────────────────────
@@ -332,7 +439,13 @@ class _DataScreenState extends State<DataScreen> {
       if (id.isNotEmpty) _setRowState(id, const _RowState('Chờ xử lý...', 0));
     }
 
-    await Future.wait(toProcess.map((row) => _processRow(row, cfg)));
+    // Cap concurrency: backend already throttles ffmpeg/Playwright, and N
+    // simultaneous job streams flood the UI with progress events → freezes.
+    const maxConcurrent = 4;
+    for (var i = 0; i < toProcess.length; i += maxConcurrent) {
+      final batch = toProcess.skip(i).take(maxConcurrent);
+      await Future.wait(batch.map((row) => _processRow(row, cfg)));
+    }
 
     await _fetch(silent: true);
     if (mounted)
@@ -749,6 +862,22 @@ class _DataScreenState extends State<DataScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
                 ),
               ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Ẩn/hiện cột',
+                child: OutlinedButton(
+                  onPressed: _data != null ? () => _showColumnPicker(context) : null,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kTextDim,
+                    side: const BorderSide(color: kBorder),
+                    backgroundColor: kInputBg,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    minimumSize: Size.zero,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                  ),
+                  child: const Icon(Icons.view_column_rounded, size: 16),
+                ),
+              ),
             ],
           ),
         ),
@@ -764,7 +893,11 @@ class _DataScreenState extends State<DataScreen> {
                   logs: _logNotifier.logs,
                   progress: _logNotifier.progress,
                   running: _processing,
+                  height: _logPaneHeight,
                   onClose: _processing ? null : _logNotifier.clear,
+                  onResize: (dy) => setState(() {
+                    _logPaneHeight = (_logPaneHeight - dy).clamp(80.0, 520.0);
+                  }),
                 ),
               ),
             ],
@@ -829,7 +962,10 @@ class _DataScreenState extends State<DataScreen> {
 
     final rows       = _filtered;
     final colWidths  = _colWidthsMap;
-    final dataFields = _data!.fields.where((f) => f != 'Nhạc').toList();
+    final visible    = _visibleFields;
+    final dataFields = _data!.fields
+        .where((f) => f != 'Nhạc' && (visible == null || visible.contains(f)))
+        .toList();
     final hasProgress = _rowStates.isNotEmpty;
 
     // Total horizontal width (Phase 1: fixed, no measure)
@@ -855,12 +991,57 @@ class _DataScreenState extends State<DataScreen> {
               builder: (_, selected, __) {
                 final allSel = rows.isNotEmpty &&
                     rows.every((r) => selected.contains(r['_record_id']));
-                return _TableHeader(
-                  dataFields: dataFields,
-                  colWidths: colWidths,
-                  hasProgress: hasProgress,
-                  allSelected: allSel,
-                  onSelectAll: (v) => _selectAll(v ?? false, rows),
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Bulk action banner
+                    if (selected.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEFF6FF),
+                          border: Border(bottom: BorderSide(color: Color(0xFFBFDBFE))),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.check_box_rounded, size: 14, color: kAccent),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${selected.length} bản ghi đã chọn',
+                            style: const TextStyle(color: kAccent, fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: _processing ? null : _processSelected,
+                            icon: const Icon(Icons.play_arrow_rounded, size: 14),
+                            label: Text('Xử lý ${selected.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            style: TextButton.styleFrom(foregroundColor: kAccent),
+                          ),
+                          const SizedBox(width: 4),
+                          TextButton.icon(
+                            onPressed: _processing ? null : _deleteSelected,
+                            icon: const Icon(Icons.delete_outline_rounded, size: 14),
+                            label: Text('Xóa ${selected.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            style: TextButton.styleFrom(foregroundColor: kRed),
+                          ),
+                          const SizedBox(width: 4),
+                          InkWell(
+                            onTap: () => _selectionNotifier.value = {},
+                            borderRadius: BorderRadius.circular(4),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(Icons.close_rounded, size: 14, color: kMuted),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    _TableHeader(
+                      dataFields: dataFields,
+                      colWidths: colWidths,
+                      hasProgress: hasProgress,
+                      allSelected: allSel,
+                      onSelectAll: (v) => _selectAll(v ?? false, rows),
+                    ),
+                  ],
                 );
               },
             ),
@@ -888,7 +1069,7 @@ class _DataScreenState extends State<DataScreen> {
                         dataFields: dataFields,
                         colWidths: colWidths,
                         hasProgress: hasProgress,
-                        rowState: _rowStates[id],
+                        rowStateListenable: _rowNotifiers[id],
                         isSelected: selected.contains(id),
                         logoEnabled: _logoEnabled[id] ?? true,
                         musicEnabled: _musicEnabled[id] ?? false,
@@ -929,10 +1110,10 @@ class _TableHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
+        color: Color(0xFFF2F4F7),
         border: Border(
-          top: BorderSide(color: kBorder),
-          bottom: BorderSide(color: kBorder),
+          top: BorderSide(color: Color(0xFFCDD4DC)),
+          bottom: BorderSide(color: Color(0xFFCDD4DC), width: 1.5),
         ),
       ),
       child: Row(children: [
@@ -953,18 +1134,18 @@ class _TableHeader extends StatelessWidget {
   }
 
   static Widget _cell(double w, Widget child) => SizedBox(width: w, height: _kHeaderH, child: child);
-  static const _div = VerticalDivider(width: 1, thickness: 1, color: kBorder);
+  static const _div = VerticalDivider(width: 1, thickness: 1, color: Color(0xFFE4E9EF));
 }
 
 // ── Table data row ────────────────────────────────────────────────────────────
 
-class _TableRow extends StatelessWidget {
+class _TableRow extends StatefulWidget {
   final int index;
   final Map<String, String> row;
   final List<String> dataFields;
   final Map<String, double> colWidths;
   final bool hasProgress;
-  final _RowState? rowState;
+  final ValueListenable<_RowState?>? rowStateListenable;
   final bool isSelected;
   final bool logoEnabled;
   final bool musicEnabled;
@@ -984,41 +1165,67 @@ class _TableRow extends StatelessWidget {
     required this.onToggle,
     required this.onLogoToggle,
     required this.onMusicToggle,
-    this.rowState,
+    this.rowStateListenable,
   });
 
   @override
+  State<_TableRow> createState() => _TableRowState();
+}
+
+class _TableRowState extends State<_TableRow> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onToggle,
-      child: Container(
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFFEFF6FF)
-              : index.isEven ? Colors.white : const Color(0xFFFAFAFC),
-          border: const Border(bottom: BorderSide(color: kBorder, width: 0.5)),
-        ),
-        child: Row(children: [
-          _cell(_kColCheck, _CheckCell(value: isSelected, onChanged: (_) => onToggle())),
-          _div,
-          _cell(_kColIndex, _IndexCell(index + 1)),
-          _div,
-          _cell(_kColToggle, _ToggleCell(value: logoEnabled, onChanged: onLogoToggle)),
-          _div,
-          _cell(_kColToggle, _ToggleCell(value: musicEnabled, onChanged: onMusicToggle)),
-          if (hasProgress) ...[_div, _cell(_kColProgress, _ProgressCell(rowState))],
-          ...dataFields.map((f) => Row(mainAxisSize: MainAxisSize.min, children: [
+    final Color rowBg;
+    if (widget.isSelected) {
+      rowBg = const Color(0xFFEBF2FF);
+    } else if (_hovered) {
+      rowBg = const Color(0xFFF0F4FF);
+    } else {
+      rowBg = widget.index.isEven ? Colors.white : const Color(0xFFF8FAFB);
+    }
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onToggle,
+        child: Container(
+          decoration: BoxDecoration(
+            color: rowBg,
+            border: const Border(bottom: BorderSide(color: Color(0xFFDDE3EA), width: 0.8)),
+          ),
+          child: Row(children: [
+            _cell(_kColCheck, _CheckCell(value: widget.isSelected, onChanged: (_) => widget.onToggle())),
             _div,
-            _cell(colWidths[f] ?? _kColMin, _DataCell(row[f] ?? '', field: f)),
-          ])),
-        ]),
+            _cell(_kColIndex, _IndexCell(widget.index + 1)),
+            _div,
+            _cell(_kColToggle, _ToggleCell(value: widget.logoEnabled, onChanged: widget.onLogoToggle, icon: Icons.image_rounded, activeColor: kAccent)),
+            _div,
+            _cell(_kColToggle, _ToggleCell(value: widget.musicEnabled, onChanged: widget.onMusicToggle, icon: Icons.music_note_rounded, activeColor: const Color(0xFF7C3AED))),
+            if (widget.hasProgress) ...[
+              _div,
+              _cell(_kColProgress, widget.rowStateListenable == null
+                  ? const _ProgressCell(null)
+                  : ValueListenableBuilder<_RowState?>(
+                      valueListenable: widget.rowStateListenable!,
+                      builder: (_, rs, __) => _ProgressCell(rs),
+                    )),
+            ],
+            ...widget.dataFields.map((f) => Row(mainAxisSize: MainAxisSize.min, children: [
+              _div,
+              _cell(widget.colWidths[f] ?? _kColMin, _DataCell(widget.row[f] ?? '', field: f)),
+            ])),
+          ]),
+        ),
       ),
     );
   }
 
   static Widget _cell(double w, Widget child) => SizedBox(width: w, height: _kRowH, child: child);
-  static const _div = VerticalDivider(width: 1, thickness: 1, color: kBorder);
+  static const _div = VerticalDivider(width: 1, thickness: 1, color: Color(0xFFE4E9EF));
 }
 
 // ── Cell widgets ──────────────────────────────────────────────────────────────
@@ -1047,18 +1254,34 @@ class _CheckCell extends StatelessWidget {
 class _ToggleCell extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
-  const _ToggleCell({required this.value, required this.onChanged});
+  final IconData icon;
+  final Color activeColor;
+  const _ToggleCell({
+    required this.value,
+    required this.onChanged,
+    required this.icon,
+    required this.activeColor,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Transform.scale(
-        scale: 0.75,
-        child: Switch(
-          value: value,
-          onChanged: onChanged,
-          activeThumbColor: kAccent,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () => onChanged(!value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 34, height: 22,
+            decoration: BoxDecoration(
+              color: value ? activeColor.withValues(alpha: 0.12) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: value ? activeColor.withValues(alpha: 0.45) : kBorder,
+              ),
+            ),
+            child: Icon(icon, size: 13, color: value ? activeColor : kMuted),
+          ),
         ),
       ),
     );
@@ -1114,8 +1337,8 @@ class _HeaderCell extends StatelessWidget {
         child: Text(
           text,
           style: const TextStyle(
-              color: kMuted, fontSize: 10.5,
-              fontWeight: FontWeight.w700, letterSpacing: 0.7),
+              color: Color(0xFF4A5568), fontSize: 11,
+              fontWeight: FontWeight.w600, letterSpacing: 0.5),
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -1159,58 +1382,97 @@ class _DataCell extends StatelessWidget {
     }
   }
 
+  String _shortenUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final host = uri.host;
+      final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+      final last = segments.isNotEmpty ? segments.last : '';
+      final short = last.length > 10 ? '…${last.substring(last.length - 8)}' : last;
+      if (host.contains('douyin')) return 'douyin/$short';
+      if (host.contains('google')) return 'drive/$short';
+      return '${host.replaceAll('www.', '')}/$short';
+    } catch (_) {
+      return url.length > 28 ? '${url.substring(0, 25)}…' : url;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    Color textColor = kText;
-    if (field == 'Status') {
+    // Status pill badge
+    if (field == 'Status' && text.isNotEmpty) {
+      final Color bg;
+      final Color fg;
       if (text.contains('✓') || text.contains('Hoàn thành')) {
-        textColor = kGreen;
+        bg = const Color(0xFFDCFCE7); fg = kGreen;
       } else if (text.contains('Lỗi') || text.contains('error')) {
-        textColor = kRed;
+        bg = const Color(0xFFFEE2E2); fg = kRed;
       } else if (text.contains('Đang')) {
-        textColor = kAmber;
+        bg = const Color(0xFFFEF3C7); fg = kAmber;
+      } else {
+        bg = const Color(0xFFF1F5F9); fg = kMuted;
       }
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: fg.withValues(alpha: 0.35)),
+            ),
+            child: Text(text,
+                style: TextStyle(color: fg, fontSize: 10.5, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      );
     }
 
-    final textStyle = TextStyle(
-      color: _isUrl ? kAccent : textColor,
-      fontSize: 11.5,
-      decoration: _isUrl ? TextDecoration.underline : TextDecoration.none,
-      decorationThickness: _isUrl ? 1.5 : 0,
-      decorationColor: _isUrl ? kAccent : null,
-    );
+    if (_isUrl) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Tooltip(
+          message: text,
+          waitDuration: const Duration(milliseconds: 400),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () => _openUrl(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.open_in_new_rounded, size: 11, color: kAccent),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(_shortenUrl(text),
+                        style: const TextStyle(color: kAccent, fontSize: 11, fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: _isUrl
-          ? MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: GestureDetector(
-                onTap: () => _openUrl(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.open_in_new, size: 13, color: kAccent),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(text,
-                          style: textStyle.copyWith(fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2),
-                    ),
-                  ]),
-                ),
-              ),
-            )
-          : Align(
-              alignment: Alignment.centerLeft,
-              child: Text(text, style: textStyle,
-                  overflow: TextOverflow.ellipsis, maxLines: 2),
-            ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(text,
+            style: const TextStyle(color: kText, fontSize: 11.5),
+            overflow: TextOverflow.ellipsis, maxLines: 2),
+      ),
     );
   }
 }
@@ -1221,13 +1483,17 @@ class _LogPane extends StatefulWidget {
   final List<LogEntry> logs;
   final double progress;
   final bool running;
+  final double height;
   final VoidCallback? onClose;
+  final ValueChanged<double>? onResize;
 
   const _LogPane({
     required this.logs,
     required this.progress,
     required this.running,
+    required this.height,
     this.onClose,
+    this.onResize,
   });
 
   @override
@@ -1261,13 +1527,36 @@ class _LogPaneState extends State<_LogPane> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 180,
-      decoration: const BoxDecoration(
-        color: kLogBg,
-        border: Border(top: BorderSide(color: kBorder)),
-      ),
+    return SizedBox(
+      height: widget.height,
       child: Column(children: [
+        // Drag handle
+        MouseRegion(
+          cursor: SystemMouseCursors.resizeRow,
+          child: GestureDetector(
+            onVerticalDragUpdate: (d) => widget.onResize?.call(d.delta.dy),
+            child: Container(
+              height: 6,
+              color: const Color(0xFFF2F4F7),
+              child: Center(
+                child: Container(
+                  width: 36, height: 3,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCDD4DC),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: Container(
+          decoration: const BoxDecoration(
+            color: kLogBg,
+            border: Border(top: BorderSide(color: kBorder)),
+          ),
+          child: Column(children: [
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           decoration: const BoxDecoration(
@@ -1314,6 +1603,8 @@ class _LogPaneState extends State<_LogPane> {
             itemCount: widget.logs.length,
             itemBuilder: (_, i) => LogRow(entry: widget.logs[i]),
           ),
+        ),
+      ])),
         ),
       ]),
     );

@@ -3,6 +3,8 @@ import subprocess
 import sys
 from typing import Callable
 
+from backend.services.progress import throttled
+
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
@@ -105,13 +107,17 @@ def process_video(
         )
 
     output_lines: list[str] = []
+    emit = throttled(log)
     for line in proc.stdout:
         line = line.rstrip()
         if not line:
             continue
         output_lines.append(line)
-        if "frame=" in line or "error" in line.lower() or "invalid" in line.lower():
-            log(line, "info")
+        low = line.lower()
+        if "error" in low or "invalid" in low:
+            log(line, "info")  # always surface errors
+        elif "frame=" in line:
+            emit(line, "info")  # time-throttled progress spam
     proc.wait()
     if proc.returncode != 0:
         tail = "\n".join(output_lines[-20:])

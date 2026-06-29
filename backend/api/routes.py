@@ -43,8 +43,10 @@ _lark_cache: dict = {}
 _lark_cache_ts: float = 0.0
 _LARK_CACHE_TTL = 300.0  # 5 minutes
 
-# Max concurrent ffmpeg jobs — 1 at a time keeps peak RAM under 512 MB
-_ffmpeg_semaphore = threading.Semaphore(1)
+# Max concurrent ffmpeg jobs. 2 on quad-core+ for throughput; 1 on smaller
+# machines to keep peak RAM/CPU sane (ffmpeg already multithreads internally).
+import os as _os
+_ffmpeg_semaphore = threading.Semaphore(2 if (_os.cpu_count() or 1) >= 4 else 1)
 
 # Real-time data-event subscribers
 _data_subscribers: set[WebSocket] = set()
