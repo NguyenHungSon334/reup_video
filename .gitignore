@@ -67,3 +67,6 @@ build/
 *.code-workspace
 .vercel
 .env*
+
+# Session cookies (secret)
+douyin.cookies.txt

@@ -96,12 +96,24 @@ except ImportError:
 _DRIVE_FILE_ID_PATTERN = re.compile(r"/d/([\w-]+)|[\?&]id=([\w-]+)")
 
 
+# Cache built Drive services by credentials path. The underlying google client
+# auto-refreshes the access token on use, so one service survives a whole batch.
+# ponytail: never invalidated; a revoked token surfaces as an API error and the
+# user re-auths (deletes token.json) — add explicit eviction only if that hurts.
+_service_cache: dict[str, object] = {}
+
+
 def _gdrive_service(credentials_path: str | None = None):
     if not GDRIVE_OK:
         raise RuntimeError(
             "Google Drive libs missing. "
             "Run: pip install google-api-python-client google-auth-oauthlib"
         )
+
+    cache_key = credentials_path or "__default__"
+    cached = _service_cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     _bootstrap_from_env()
 
@@ -126,7 +138,9 @@ def _gdrive_service(credentials_path: str | None = None):
         with open(save_path, "w") as f:
             f.write(creds.to_json())
 
-    return build("drive", "v3", credentials=creds)
+    svc = build("drive", "v3", credentials=creds)
+    _service_cache[cache_key] = svc
+    return svc
 
 
 def _extract_drive_file_id(value: str) -> str | None:

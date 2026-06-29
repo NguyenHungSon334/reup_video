@@ -284,8 +284,6 @@ async def gdrive_upload(file: UploadFile = File(...), folder_id: str | None = Fo
         logs.append({"type": t, "message": msg})
 
     try:
-        import tempfile
-
         suffix = Path(file.filename).suffix or ""
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tf:
             tmp = tf.name
