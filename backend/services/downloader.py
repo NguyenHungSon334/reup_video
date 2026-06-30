@@ -158,31 +158,6 @@ def _find_video(out_dir: str) -> str:
     raise RuntimeError("Downloaded file not found in temp folder.")
 
 
-def _pure_api_play_url(canonical: str, log: Callable) -> str | None:
-    """Fast path (no browser): hit Douyin's web detail API directly and read the
-    exact play_addr. A single httpx client seeds a guest ttwid from the homepage
-    and carries it to the API call. Returns None when Douyin blocks the unsigned
-    request (empty aweme_detail) — the caller then falls back to Playwright, which
-    runs the same API inside a real browser that auto-signs it."""
-    vid = _extract_video_id(canonical)
-    if not vid:
-        return None
-    api = f"https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id={vid}"
-    headers = {"User-Agent": _MOBILE_UA, "Referer": "https://www.douyin.com/"}
-    try:
-        with httpx.Client(headers=headers, follow_redirects=True, timeout=8) as c:
-            c.get("https://www.douyin.com/")  # seed guest cookies (ttwid)
-            data = c.get(api).json()
-    except Exception as e:
-        log(f"  Pure API failed: {e}", "warn")
-        return None
-    ad = data.get("aweme_detail") or {}
-    urls = ((ad.get("video") or {}).get("play_addr") or {}).get("url_list") or []
-    if not urls:
-        return None
-    return urls[0].replace("playwm", "play")  # strip watermark variant if present
-
-
 def download_video(
     url: str,
     out_dir: str,
@@ -195,26 +170,6 @@ def download_video(
 
     canonical = _resolve_canonical(url, log)
     is_douyin = "douyin" in canonical
-
-    # ── Pure-API fast path (no browser) ──────────────────────────────────────
-    # Most Douyin videos resolve in <1s via the web detail API — no Chromium
-    # launch, no HTML/CSS/JS load. Cheap and fast; on success we skip everything
-    # heavier. When Douyin blocks the unsigned call, _pure_api_play_url returns
-    # None and we fall through to the existing yt-dlp/Playwright pipeline.
-    if is_douyin:
-        log("Trying pure API (no browser)...", "info")
-        api_url = _pure_api_play_url(canonical, log)
-        if api_url:
-            out_path = str(Path(out_dir) / "video.mp4")
-            try:
-                from backend.services.playwright_downloader import _download_url
-                _download_url(api_url, out_path, log)
-                _validate_video(out_path)
-                log("Downloaded via pure API", "success")
-                return out_path
-            except Exception as e:
-                errors.append(f"pure-api: {e}")
-                log(f"Pure API download failed: {e}", "warn")
 
     # Douyin + no cookies + no installed browser to read them from (typical on a
     # Mac without Chrome) → yt-dlp can't download by exact video ID and we'd fall

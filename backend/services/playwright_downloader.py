@@ -191,8 +191,11 @@ class _BrowserWorker:
         if self._browser_lock is None:
             self._browser_lock = asyncio.Lock()
         async with self._browser_lock:
-            if self._browser is not None and self._browser.is_connected():
-                return
+            if self._ctx is not None:
+                br = self._ctx.browser
+                if br is None or br.is_connected():
+                    return
+                self._ctx = None
             from playwright.async_api import async_playwright
 
             base_args = ["--disable-blink-features=AutomationControlled",
@@ -201,16 +204,26 @@ class _BrowserWorker:
                 base_args += ["--no-sandbox", "--disable-dev-shm-usage",
                               "--disable-setuid-sandbox"]
 
-            log("  Launching shared Chromium...", "info")
+            # Persistent context: cookies/session survive across runs, so Douyin's
+            # anti-bot (ttwid/captcha) is satisfied once and reused — far fewer
+            # blocks than a fresh context every launch. Stored in the user's home
+            # (writable; the app bundle itself is read-only on macOS).
+            user_data_dir = Path.home() / ".reup_video" / "pw_userdata"
+            user_data_dir.mkdir(parents=True, exist_ok=True)
+
+            log("  Launching shared Chromium (persistent profile)...", "info")
             self._pw = await async_playwright().start()
-            self._browser = await self._pw.chromium.launch(headless=True, args=base_args)
-            self._ctx = await self._browser.new_context(
+            self._ctx = await self._pw.chromium.launch_persistent_context(
+                str(user_data_dir),
+                headless=True,
+                args=base_args,
                 user_agent=_DESKTOP_UA,
                 viewport={"width": 1280, "height": 720},
                 locale="zh-CN",
                 timezone_id="Asia/Shanghai",
                 extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
             )
+            self._browser = self._ctx.browser
             await self._ctx.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
                 Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
@@ -389,11 +402,32 @@ class _BrowserWorker:
         fut = asyncio.run_coroutine_threadsafe(self._fetch(url, log), self._loop)
         return fut.result(timeout=timeout)
 
+    async def _cookie_header(self) -> str:
+        try:
+            cookies = await self._ctx.cookies()
+        except Exception:
+            return ""
+        return "; ".join(
+            f"{c['name']}={c['value']}" for c in cookies if c.get("name"))
+
+    def cookie_header(self) -> str:
+        """Cookie string from the live browser context, so the httpx download
+        request carries the same anti-bot cookies (ttwid etc.) Douyin's CDN
+        expects — matching what the browser itself used."""
+        self._ensure_loop()
+        if self._loop is None:
+            return ""
+        try:
+            return asyncio.run_coroutine_threadsafe(
+                self._cookie_header(), self._loop).result(timeout=15)
+        except Exception:
+            return ""
+
 
 _worker = _BrowserWorker()
 
 
-def _download_url(url: str, out_path: str, log: Callable) -> None:
+def _download_url(url: str, out_path: str, log: Callable, cookie: str = "") -> None:
     import httpx
 
     headers = {
@@ -401,6 +435,8 @@ def _download_url(url: str, out_path: str, log: Callable) -> None:
         "Referer": "https://www.douyin.com/",
         "Accept": "*/*",
     }
+    if cookie:
+        headers["Cookie"] = cookie
     log(f"  Downloading video...", "info")
     emit = throttled(log)
     with httpx.Client(headers=headers, follow_redirects=True, timeout=120) as client:
@@ -443,9 +479,10 @@ def download_via_playwright(url: str, out_dir: str, log: Callable) -> str:
 
     with _playwright_sem:  # bound concurrent pages on the shared browser
         video_url = _worker.fetch_video_url(url, log)
+        cookie = _worker.cookie_header()
 
     log(f"  Got video URL.", "info")
-    _download_url(video_url, out_path, log)
+    _download_url(video_url, out_path, log, cookie)
     return out_path
 
 
