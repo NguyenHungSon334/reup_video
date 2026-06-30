@@ -3,6 +3,7 @@ Download Douyin videos by intercepting the actual video URL from a real
 browser session. Bypasses API signing requirements entirely.
 """
 import asyncio
+import json
 import re
 import sys
 import threading
@@ -235,6 +236,27 @@ class _BrowserWorker:
 
         target_id = _extract_aweme_id(video_page_url)
         found: list[str] = []
+        detail_urls: list[str] = []  # play_addr from the aweme/detail API response
+
+        async def on_detail(resp: "Response") -> None:
+            # Most reliable source: Douyin's own detail API returns the exact
+            # play_addr for a specific aweme_id. Verify the id matches the target
+            # so a feed-prefetched detail call can't hand us a recommended clip.
+            if "aweme/detail" not in resp.url:
+                return
+            try:
+                data = json.loads(await resp.text())
+            except Exception:
+                return
+            ad = data.get("aweme_detail") or {}
+            if target_id and str(ad.get("aweme_id")) != str(target_id):
+                return
+            urls = ((ad.get("video") or {}).get("play_addr") or {}).get("url_list") or []
+            for u in urls:
+                if u and u not in detail_urls:
+                    detail_urls.append(u)
+            if detail_urls:
+                log(f"  Got play_addr from aweme/detail API ({target_id}).", "info")
 
         def on_request(req: "Request") -> None:
             url = req.url
@@ -268,6 +290,7 @@ class _BrowserWorker:
                 pass
 
         page = await self._ctx.new_page()
+        page.on("response", on_detail)
         page.on("request", on_request)
         page.on("response", on_response)
         await page.route("**/*", block_extra_videos)
@@ -289,12 +312,17 @@ class _BrowserWorker:
                     f"Playwright drifted to {page.url[:80]} (target {target_id}); "
                     "refusing to download a non-target clip")
 
-            # Deterministic path: pull the play URL for THIS exact aweme_id from the
-            # page's embedded SSR state. Matching by id (not capture order) means a
-            # sibling/recommended clip can never be selected. Retry while the page
-            # hydrates; fall through to network interception only if it never appears.
+            # Deterministic paths (both keyed to the exact aweme_id, so a
+            # sibling/recommended clip can never be selected): prefer the play_addr
+            # from the aweme/detail API response, then the embedded SSR state. Retry
+            # while the page hydrates; fall through to network interception only if
+            # neither appears.
             if target_id:
                 for _ in range(8):
+                    if detail_urls:
+                        url = _pick_target_url(detail_urls)
+                        if url:
+                            return url
                     try:
                         by_id = await page.evaluate(_EXTRACT_BY_ID_JS, target_id)
                     except Exception:
