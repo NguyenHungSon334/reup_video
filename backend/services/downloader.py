@@ -3,15 +3,31 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-# Browser cookie sources to try per platform (yt-dlp cookiesfrombrowser).
-# Windows: skipped — Chrome 127+ app-bound encryption makes cookiesfrombrowser
-# fail with DPAPI errors. The auto-saved douyin.cookies.txt is used instead.
-_BROWSER_COOKIE_SOURCES: list[str] = (
-    ["chrome", "chromium", "safari", "firefox"]
-    if sys.platform == "darwin"
-    else [] if sys.platform == "win32"
-    else ["chrome", "chromium", "firefox", "edge"]
-)
+# macOS app bundle per yt-dlp browser keyword — used to skip cookie sources for
+# browsers that aren't actually installed (trying chrome on a Mac without Chrome
+# just fails and, with no cookie file yet, pushes us onto the drift-prone
+# Playwright path that can grab the wrong clip).
+_MAC_BROWSER_APPS: dict[str, str] = {
+    "chrome":   "/Applications/Google Chrome.app",
+    "chromium": "/Applications/Chromium.app",
+    "safari":   "/Applications/Safari.app",
+    "firefox":  "/Applications/Firefox.app",
+    "edge":     "/Applications/Microsoft Edge.app",
+}
+
+
+def _browser_cookie_sources() -> list[str]:
+    """Browser cookie sources to try, per platform — installed browsers only.
+
+    Windows: skipped — Chrome 127+ app-bound encryption makes cookiesfrombrowser
+    fail with DPAPI errors; the auto-saved douyin.cookies.txt is used instead.
+    """
+    if sys.platform == "win32":
+        return []
+    if sys.platform == "darwin":
+        return [b for b in ("chrome", "chromium", "safari", "firefox")
+                if Path(_MAC_BROWSER_APPS[b]).exists()]
+    return ["chrome", "chromium", "firefox", "edge"]
 
 import httpx
 
@@ -134,17 +150,33 @@ def download_video(
     has_cookies = bool(cookies_file and Path(cookies_file).exists())
 
     canonical = _resolve_canonical(url, log)
+    is_douyin = "douyin" in canonical
+
+    # Douyin + no cookies + no installed browser to read them from (typical on a
+    # Mac without Chrome) → yt-dlp can't download by exact video ID and we'd fall
+    # straight to the drift-prone Playwright intercept. Warm guest cookies first
+    # so the reliable yt-dlp-by-ID path below can run on the very first request.
+    if is_douyin and not has_cookies and not _browser_cookie_sources():
+        from backend.config import COOKIES_STORE_FILE
+        try:
+            from backend.services.playwright_downloader import warm_cookies
+            log("Warming Douyin cookies for yt-dlp...", "info")
+            warm_cookies(log)
+            if COOKIES_STORE_FILE.exists():
+                cookies_file = str(COOKIES_STORE_FILE)
+                has_cookies = True
+        except Exception as e:
+            log(f"Cookie warm-up failed: {e}", "warn")
 
     # ── yt-dlp attempts ───────────────────────────────────────────────────────
     # Douyin always rejects cookieless requests ("fresh cookies needed"), so skip
     # that dead attempt and go straight to cookies → Playwright.
-    is_douyin = "douyin" in canonical
     ytdlp_variants: list[tuple[str, str | None, str | None]] = []
     if not is_douyin:
         ytdlp_variants.append(("yt-dlp (no cookies)", None, None))
     if has_cookies:
         ytdlp_variants.append(("yt-dlp (cookies file)", cookies_file, None))
-    for browser in _BROWSER_COOKIE_SOURCES:
+    for browser in _browser_cookie_sources():
         ytdlp_variants.append((f"yt-dlp (browser:{browser})", None, browser))
 
     for label, cf, browser in ytdlp_variants:

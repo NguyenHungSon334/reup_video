@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(2, 1, 22, 0),
-    prodvers=(2, 1, 22, 0),
+    filevers=(2, 1, 23, 0),
+    prodvers=(2, 1, 23, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName',      u'ReupVideo'),
           StringStruct(u'FileDescription',  u'Reup Video - Douyin Downloader'),
-          StringStruct(u'FileVersion',      u'2.1.22'),
+          StringStruct(u'FileVersion',      u'2.1.23'),
           StringStruct(u'InternalName',     u'ReupVideo'),
           StringStruct(u'LegalCopyright',   u'2024 ReupVideo'),
           StringStruct(u'OriginalFilename', u'ReupVideo.exe'),
           StringStruct(u'ProductName',      u'Reup Video'),
-          StringStruct(u'ProductVersion',   u'2.1.22'),
+          StringStruct(u'ProductVersion',   u'2.1.23'),
         ]
       )
     ]),

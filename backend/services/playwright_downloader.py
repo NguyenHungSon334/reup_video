@@ -239,10 +239,13 @@ class _BrowserWorker:
                 pass
 
             # Guard: confirm we actually landed on the requested video, not a
-            # redirect to a feed/recommended page.
+            # redirect to a feed/recommended page. Anything captured on a drifted
+            # page is a recommended/feed clip — accepting it downloads the WRONG
+            # video, so reject outright rather than "trusting" it.
             if target_id and target_id not in page.url:
-                log(f"  ⚠ Page drifted to {page.url[:80]} (target {target_id}); "
-                    "trusting first-captured URL", "warn")
+                raise RuntimeError(
+                    f"Playwright drifted to {page.url[:80]} (target {target_id}); "
+                    "refusing to download a non-target clip")
 
             # Trigger playback IN PLACE. No scroll / no Space — those advance the
             # vertical feed to the next video and would intercept the wrong clip.
@@ -325,6 +328,22 @@ def _download_url(url: str, out_path: str, log: Callable) -> None:
                     if total:
                         pct = downloaded / total * 100
                         emit(f"  {int(pct)}%", "info", pct=pct)
+
+
+def warm_cookies(log: Callable) -> None:
+    """Launch the shared browser to grab fresh guest cookies into the store file.
+
+    Lets the reliable yt-dlp-by-ID path run on the first request when no browser
+    cookie source is available (e.g. a Mac without Chrome). The browser stays
+    warm for any later Playwright fallback.
+    """
+    worker = _worker
+
+    async def _go() -> None:
+        await worker._ensure_browser(log)
+
+    worker._ensure_loop()
+    asyncio.run_coroutine_threadsafe(_go(), worker._loop).result(timeout=60)
 
 
 def download_via_playwright(url: str, out_dir: str, log: Callable) -> str:
