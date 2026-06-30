@@ -131,6 +131,25 @@ def _ytdlp(
     return _find_video(out_dir)
 
 
+_MIN_VIDEO_BYTES = 50 * 1024  # anything smaller is almost certainly an error page
+
+
+def _validate_video(path: str) -> None:
+    """Reject a download that isn't a real video so we fall through to the next
+    method instead of returning the wrong/empty output (an HTML error page, a
+    truncated file, or a stray non-video response)."""
+    p = Path(path)
+    if not p.exists():
+        raise RuntimeError("downloaded file is missing")
+    size = p.stat().st_size
+    if size < _MIN_VIDEO_BYTES:
+        raise RuntimeError(f"downloaded file too small ({size} B) — likely an error page")
+    head = p.read_bytes()[:16]
+    # mp4/mov carry an 'ftyp' box near the start; webm/mkv start with the EBML magic.
+    if b"ftyp" not in head[:12] and not head.startswith(b"\x1aE\xdf\xa3"):
+        raise RuntimeError("downloaded file is not a recognized video container")
+
+
 def _find_video(out_dir: str) -> str:
     for ext in ("mp4", "webm", "mkv", "mov"):
         p = Path(out_dir) / f"video.{ext}"
@@ -183,6 +202,7 @@ def download_video(
         log(f"Trying {label}...", "info")
         try:
             path = _ytdlp(canonical, out_dir, log, cookies_file=cf, cookies_from_browser=browser)
+            _validate_video(path)
             log(f"Downloaded: {Path(path).name}", "success")
             return path
         except Exception as e:
@@ -194,6 +214,7 @@ def download_video(
     try:
         from backend.services.playwright_downloader import download_via_playwright
         path = download_via_playwright(canonical, out_dir, log)
+        _validate_video(path)
         log(f"Downloaded: {Path(path).name}", "success")
         return path
     except Exception as e:
@@ -203,3 +224,21 @@ def download_video(
     raise RuntimeError(
         "All download methods failed\n" + "\n".join(f"  - {e}" for e in errors)
     )
+
+
+if __name__ == "__main__":
+    # Offline self-check for the download validator (no network).
+    import tempfile
+
+    d = Path(tempfile.mkdtemp())
+    too_small = d / "s.mp4"; too_small.write_bytes(b"\x00" * 10)
+    not_video = d / "h.mp4"; not_video.write_bytes(b"<html>error</html>" + b"x" * _MIN_VIDEO_BYTES)
+    good = d / "v.mp4"; good.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * _MIN_VIDEO_BYTES)
+
+    for bad in (too_small, not_video, d / "missing.mp4"):
+        try:
+            _validate_video(str(bad)); assert False, f"should reject {bad.name}"
+        except RuntimeError:
+            pass
+    _validate_video(str(good))  # valid mp4 → no raise
+    print("OK — downloader validator self-check passed")

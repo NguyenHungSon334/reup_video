@@ -44,6 +44,48 @@ _CDN_HOSTS = (
 
 _VIDEO_PATH_MARKERS = ("/video/tos/", "/video/", "mime_type=video", "video_mp4")
 
+# Deterministic extractor: walk Douyin's embedded SSR state, find the object
+# whose aweme_id == the requested id, and return ITS play addresses. Selecting by
+# id (not network-capture order) is what prevents a recommended/sibling clip from
+# being downloaded instead of the target.
+_EXTRACT_BY_ID_JS = r"""
+(targetId) => {
+  const out = [];
+  const seen = new Set();
+  const push = (u) => {
+    if (!u || typeof u !== 'string') return;
+    let s = u.startsWith('//') ? 'https:' + u : u;
+    if (s.startsWith('http')) out.push(s);
+  };
+  const collect = (v) => {
+    if (!v) return;
+    if (v.play_addr && Array.isArray(v.play_addr.url_list)) v.play_addr.url_list.forEach(push);
+    if (typeof v.playApi === 'string') push(v.playApi);
+    const pa = v.playAddr;
+    if (pa) (Array.isArray(pa) ? pa : [pa]).forEach(p => push(typeof p === 'string' ? p : p && p.src));
+    if (Array.isArray(v.bitRateList)) v.bitRateList.forEach(b => {
+      const bp = b && b.playAddr;
+      if (bp) (Array.isArray(bp) ? bp : [bp]).forEach(p => push(typeof p === 'string' ? p : p && p.src));
+    });
+  };
+  const visit = (o) => {
+    if (!o || typeof o !== 'object' || seen.has(o)) return;
+    seen.add(o);
+    const id = o.aweme_id || o.awemeId;
+    if (id && String(id) === String(targetId) && o.video) collect(o.video);
+    for (const k in o) { try { visit(o[k]); } catch (e) {} }
+  };
+  try { visit(window._ROUTER_DATA); } catch (e) {}
+  for (const s of document.querySelectorAll('script')) {
+    const t = s.textContent || '';
+    if (t.indexOf(targetId) === -1) continue;
+    if (t.indexOf('play_addr') === -1 && t.indexOf('playApi') === -1 && t.indexOf('playAddr') === -1) continue;
+    try { visit(JSON.parse(t)); } catch (e) {}
+  }
+  return [...new Set(out)];
+}
+"""
+
 
 def _extract_aweme_id(url: str) -> str | None:
     """Pull the target Douyin video id from the canonical page URL."""
@@ -246,6 +288,23 @@ class _BrowserWorker:
                 raise RuntimeError(
                     f"Playwright drifted to {page.url[:80]} (target {target_id}); "
                     "refusing to download a non-target clip")
+
+            # Deterministic path: pull the play URL for THIS exact aweme_id from the
+            # page's embedded SSR state. Matching by id (not capture order) means a
+            # sibling/recommended clip can never be selected. Retry while the page
+            # hydrates; fall through to network interception only if it never appears.
+            if target_id:
+                for _ in range(8):
+                    try:
+                        by_id = await page.evaluate(_EXTRACT_BY_ID_JS, target_id)
+                    except Exception:
+                        by_id = []
+                    if by_id:
+                        url = _pick_target_url(by_id)
+                        if url:
+                            log(f"  Matched play URL by aweme_id {target_id}.", "info")
+                            return url
+                    await page.wait_for_timeout(1000)
 
             # Trigger playback IN PLACE. No scroll / no Space — those advance the
             # vertical feed to the next video and would intercept the wrong clip.
