@@ -160,12 +160,18 @@ jobs:
           # Re-sign: editing the bundle (renamed exe, injected Flutter app, swapped
           # Info.plist) invalidated PyInstaller's signature. An unsigned/broken
           # signature + quarantine is exactly what Gatekeeper reports as "damaged".
-          # Ad-hoc deep-sign (no paid cert) gives a valid signature so the app opens
+          # Ad-hoc sign (no paid cert) gives a valid signature so the app opens
           # (right-click → Open on first launch; no more "damaged").
           APP="dist/dmg_staging/Reup Video.app"
+          # Flutter sub-app is a clean bundle → deep-sign it.
           codesign --force --deep --sign - "$RESOURCES/reup_flutter.app" || true
-          codesign --force --deep --sign - "$APP"
-          codesign --verify --deep --strict "$APP" || true
+          # Re-sign the renamed backend executable.
+          codesign --force --sign - "$MACOS/ReupVideo-backend" || true
+          # Seal the outer bundle WITHOUT --deep: PyInstaller stages Python package
+          # dirs (e.g. *.dist-info) under Contents/Frameworks, which --deep wrongly
+          # treats as nested bundles and rejects ("bundle format unrecognized").
+          codesign --force --sign - "$APP"
+          codesign --verify "$APP" || true
 
           mkdir -p dist/installer_mac
           create-dmg \
