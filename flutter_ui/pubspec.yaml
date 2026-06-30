@@ -2,7 +2,7 @@ name: reup_flutter
 description: Douyin Reup — Flutter desktop UI
 
 publish_to: 'none'
-version: 2.1.26+1
+version: 2.1.27+1
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
