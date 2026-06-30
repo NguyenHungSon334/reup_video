@@ -163,13 +163,20 @@ jobs:
           # Ad-hoc sign (no paid cert) gives a valid signature so the app opens
           # (right-click → Open on first launch; no more "damaged").
           APP="dist/dmg_staging/Reup Video.app"
+          # Sign every nested Mach-O binary bottom-up FIRST. PyInstaller collects
+          # some binaries (e.g. imageio_ffmpeg's ffmpeg) as data, leaving them
+          # unsigned — sealing the bundle then fails with "code object is not
+          # signed at all". --deep can't be used on the outer app because Python
+          # package dirs (*.dist-info) under Frameworks aren't bundles, so we sign
+          # the Mach-O files explicitly and seal the bundle without --deep.
+          find "$APP/Contents" -type f | while read -r f; do
+            if file "$f" | grep -q "Mach-O"; then
+              codesign --force --timestamp=none --sign - "$f" || true
+            fi
+          done
           # Flutter sub-app is a clean bundle → deep-sign it.
           codesign --force --deep --sign - "$RESOURCES/reup_flutter.app" || true
-          # Re-sign the renamed backend executable.
-          codesign --force --sign - "$MACOS/ReupVideo-backend" || true
-          # Seal the outer bundle WITHOUT --deep: PyInstaller stages Python package
-          # dirs (e.g. *.dist-info) under Contents/Frameworks, which --deep wrongly
-          # treats as nested bundles and rejects ("bundle format unrecognized").
+          # Seal the outer bundle (nested Mach-O now signed).
           codesign --force --sign - "$APP"
           codesign --verify "$APP" || true
 
