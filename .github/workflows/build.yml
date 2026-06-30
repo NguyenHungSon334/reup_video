@@ -153,32 +153,13 @@ jobs:
 
           cp assets/icon.icns "$RESOURCES/icon.icns"
 
-          # Fix-If-Damaged.command: fallback for quarantine errors after drag-install
-          cp assets/macos/Install.command "dist/dmg_staging/Fix If Damaged.command"
-          chmod +x "dist/dmg_staging/Fix If Damaged.command"
-
-          # Re-sign: editing the bundle (renamed exe, injected Flutter app, swapped
-          # Info.plist) invalidated PyInstaller's signature. An unsigned/broken
-          # signature + quarantine is exactly what Gatekeeper reports as "damaged".
-          # Ad-hoc sign (no paid cert) gives a valid signature so the app opens
-          # (right-click → Open on first launch; no more "damaged").
-          APP="dist/dmg_staging/Reup Video.app"
-          # Sign every nested Mach-O binary bottom-up FIRST. PyInstaller collects
-          # some binaries (e.g. imageio_ffmpeg's ffmpeg) as data, leaving them
-          # unsigned — sealing the bundle then fails with "code object is not
-          # signed at all". --deep can't be used on the outer app because Python
-          # package dirs (*.dist-info) under Frameworks aren't bundles, so we sign
-          # the Mach-O files explicitly and seal the bundle without --deep.
-          find "$APP/Contents" -type f | while read -r f; do
-            if file "$f" | grep -q "Mach-O"; then
-              codesign --force --timestamp=none --sign - "$f" || true
-            fi
-          done
-          # Flutter sub-app is a clean bundle → deep-sign it.
-          codesign --force --deep --sign - "$RESOURCES/reup_flutter.app" || true
-          # Seal the outer bundle (nested Mach-O now signed).
-          codesign --force --sign - "$APP"
-          codesign --verify "$APP" || true
+          # Install.command: the primary install path. The app is unsigned (no paid
+          # Apple cert), so ad-hoc signing this merged PyInstaller+Flutter bundle is
+          # unreliable and quarantine would still make a dragged app show "damaged".
+          # Instead the user double-clicks Install.command, which copies the app to
+          # /Applications and runs `xattr -cr` to clear quarantine → opens cleanly.
+          cp assets/macos/Install.command "dist/dmg_staging/Install.command"
+          chmod +x "dist/dmg_staging/Install.command"
 
           mkdir -p dist/installer_mac
           create-dmg \
@@ -190,7 +171,7 @@ jobs:
             --icon "Reup Video.app" 160 200 \
             --hide-extension "Reup Video.app" \
             --app-drop-link 500 200 \
-            --icon "Fix If Damaged.command" 160 350 \
+            --icon "Install.command" 160 350 \
             "dist/installer_mac/ReupVideo_mac_${{ env.APP_VERSION }}.dmg" \
             "dist/dmg_staging"
 
