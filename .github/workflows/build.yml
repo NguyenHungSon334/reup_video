@@ -24,6 +24,12 @@ jobs:
           $v = if ($ref -match '^v\d') { $ref.TrimStart('v') } else { "${{ env.APP_VERSION }}" }
           echo "APP_VERSION=$v" >> $env:GITHUB_ENV
           (Get-Content flutter_ui/pubspec.yaml) -replace '^version: .*', "version: $v+1" | Set-Content flutter_ui/pubspec.yaml
+          (Get-Content setup.iss) -replace '#define AppVersion .*', "#define AppVersion `"$v`"" | Set-Content setup.iss
+          $t = ($v -split '\.') -join ', '
+          (Get-Content version_info.txt) `
+            -replace 'filevers=\([^)]*\)', "filevers=($t, 0)" `
+            -replace 'prodvers=\([^)]*\)', "prodvers=($t, 0)" `
+            -replace "u'\d+\.\d+\.\d+'", "u'$v'" | Set-Content version_info.txt
 
       - name: Create credentials.json from secret
         run: '[System.IO.File]::WriteAllText("backend\credentials.json", $env:GDRIVE_CREDENTIALS_JSON, [System.Text.Encoding]::UTF8)'
