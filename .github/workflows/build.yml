@@ -5,8 +5,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# APP_VERSION below is only a fallback for manual workflow_dispatch runs.
+# Tag pushes (v*) override it from the tag in each job's "Resolve version" step,
+# so the git tag is the single source of truth for the release version.
 env:
-  APP_VERSION: "2.1.22"
+  APP_VERSION: "2.1.23"
 
 jobs:
   # ── Windows: backend EXE + Flutter desktop + Inno Setup ─────────────────
@@ -14,6 +17,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4.2.2
+
+      - name: Resolve version from tag
+        run: |
+          $ref = "${{ github.ref_name }}"
+          $v = if ($ref -match '^v\d') { $ref.TrimStart('v') } else { "${{ env.APP_VERSION }}" }
+          echo "APP_VERSION=$v" >> $env:GITHUB_ENV
+          (Get-Content flutter_ui/pubspec.yaml) -replace '^version: .*', "version: $v+1" | Set-Content flutter_ui/pubspec.yaml
 
       - name: Create credentials.json from secret
         run: '[System.IO.File]::WriteAllText("backend\credentials.json", $env:GDRIVE_CREDENTIALS_JSON, [System.Text.Encoding]::UTF8)'
@@ -69,6 +79,13 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4.2.2
+
+      - name: Resolve version from tag
+        run: |
+          ref="${{ github.ref_name }}"
+          if [[ "$ref" =~ ^v[0-9] ]]; then v="${ref#v}"; else v="${{ env.APP_VERSION }}"; fi
+          echo "APP_VERSION=$v" >> "$GITHUB_ENV"
+          sed -i '' "s/^version: .*/version: ${v}+1/" flutter_ui/pubspec.yaml
 
       - name: Create credentials.json from secret
         run: printf '%s' "$GDRIVE_CREDENTIALS_JSON" > backend/credentials.json
@@ -139,6 +156,16 @@ jobs:
           # Fix-If-Damaged.command: fallback for quarantine errors after drag-install
           cp assets/macos/Install.command "dist/dmg_staging/Fix If Damaged.command"
           chmod +x "dist/dmg_staging/Fix If Damaged.command"
+
+          # Re-sign: editing the bundle (renamed exe, injected Flutter app, swapped
+          # Info.plist) invalidated PyInstaller's signature. An unsigned/broken
+          # signature + quarantine is exactly what Gatekeeper reports as "damaged".
+          # Ad-hoc deep-sign (no paid cert) gives a valid signature so the app opens
+          # (right-click → Open on first launch; no more "damaged").
+          APP="dist/dmg_staging/Reup Video.app"
+          codesign --force --deep --sign - "$RESOURCES/reup_flutter.app" || true
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP" || true
 
           mkdir -p dist/installer_mac
           create-dmg \

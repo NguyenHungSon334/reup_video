@@ -1,15 +1,21 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 
 class UpdateService {
-  static const String currentVersion = '2.1.21';
   static const String _githubApi =
       'https://api.github.com/repos/NguyenHungSon334/reup_video/releases/latest';
+
+  /// Real running version, read from the bundle (pubspec) — never hardcoded, so
+  /// it can't drift behind the published release and falsely report an update.
+  static Future<String> currentVersion() async =>
+      (await PackageInfo.fromPlatform()).version;
 
   static Future<({String version, String url})?> checkForUpdate() async {
     if (kIsWeb) return null;
     try {
+      final current = await currentVersion();
       final res = await http.get(
         Uri.parse(_githubApi),
         headers: {'Accept': 'application/vnd.github+json'},
@@ -17,10 +23,12 @@ class UpdateService {
       if (res.statusCode != 200) return null;
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final tag = (data['tag_name'] as String?)?.replaceFirst('v', '') ?? '';
-      if (!_isNewer(tag, currentVersion)) return null;
+      if (!_isNewer(tag, current)) return null;
+      // Pick the installer matching this OS (.dmg on macOS, .exe on Windows).
+      final ext = defaultTargetPlatform == TargetPlatform.macOS ? '.dmg' : '.exe';
       final assets = (data['assets'] as List<dynamic>);
       final asset = assets.firstWhere(
-        (a) => (a['name'] as String).endsWith('.exe'),
+        (a) => (a['name'] as String).endsWith(ext),
         orElse: () => assets.isNotEmpty ? assets.first : null,
       );
       if (asset == null) return null;

@@ -54,12 +54,15 @@ class Sidebar extends StatelessWidget {
                           letterSpacing: -0.3,
                         ),
                       ),
-                      Text(
-                        'v${UpdateService.currentVersion}',
-                        style: const TextStyle(
-                          color: kMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                      FutureBuilder<String>(
+                        future: UpdateService.currentVersion(),
+                        builder: (context, snap) => Text(
+                          'v${snap.data ?? ''}',
+                          style: const TextStyle(
+                            color: kMuted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                     ],

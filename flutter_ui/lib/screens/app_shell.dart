@@ -29,12 +29,14 @@ class _AppShellState extends State<AppShell> {
   Future<void> _checkUpdate() async {
     final update = await UpdateService.checkForUpdate();
     if (update == null || !mounted) return;
+    final current = await UpdateService.currentVersion();
+    if (!mounted) return;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Có bản cập nhật mới'),
         content: Text('Phiên bản ${update.version} đã sẵn sàng.\n'
-            'Phiên bản hiện tại: ${UpdateService.currentVersion}'),
+            'Phiên bản hiện tại: $current'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
