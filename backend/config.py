@@ -13,6 +13,8 @@ except ImportError:
 
 CONFIG_FILE = Path(__file__).parent.parent / "config.json"
 COOKIES_STORE_FILE = Path(__file__).parent.parent / "douyin.cookies.txt"
+# JSON cookie store read by the pure-API path WITHOUT launching a browser.
+COOKIES_JSON_FILE = Path.home() / ".reup_video" / "douyin.cookies.json"
 _BUNDLED_CREDS = Path(__file__).parent / "credentials.json"
 
 _DEFAULTS: dict[str, Any] = {

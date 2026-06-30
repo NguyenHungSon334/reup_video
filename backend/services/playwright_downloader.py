@@ -139,6 +139,31 @@ def _save_cookies(cookies: list[dict], log: Callable) -> None:
     log(f"  Saved {len(cookies)} cookies to {COOKIES_STORE_FILE.name}", "info")
 
 
+def _save_cookies_json(cookies: list[dict], log: Callable) -> None:
+    """Dump the live session cookies to JSON so the pure-API path can read them
+    without launching a browser (the whole point of the fast path)."""
+    from backend.config import COOKIES_JSON_FILE
+    if not cookies:
+        return
+    try:
+        COOKIES_JSON_FILE.parent.mkdir(parents=True, exist_ok=True)
+        COOKIES_JSON_FILE.write_text(json.dumps(cookies), encoding="utf-8")
+        log(f"  Saved {len(cookies)} cookies to {COOKIES_JSON_FILE.name}", "info")
+    except Exception as e:
+        log(f"  Cookie JSON save failed: {e}", "warn")
+
+
+def load_cookie_header() -> str:
+    """Cookie header string from the JSON store — no browser launch. Empty if
+    the store is missing/unreadable (caller then seeds it via Playwright)."""
+    from backend.config import COOKIES_JSON_FILE
+    try:
+        cookies = json.loads(COOKIES_JSON_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    return "; ".join(f"{c['name']}={c['value']}" for c in cookies if c.get("name"))
+
+
 def _is_video_url(url: str) -> bool:
     if not any(h in url for h in _CDN_HOSTS):
         return False
@@ -168,6 +193,7 @@ class _BrowserWorker:
         self._browser = None
         self._ctx = None
         self._browser_lock: asyncio.Lock | None = None
+        self._visible = False  # first seed runs visible so user can solve captcha
 
     def _ensure_loop(self) -> None:
         with self._start_lock:
@@ -215,7 +241,7 @@ class _BrowserWorker:
             self._pw = await async_playwright().start()
             self._ctx = await self._pw.chromium.launch_persistent_context(
                 str(user_data_dir),
-                headless=True,
+                headless=not self._visible,
                 args=base_args,
                 user_agent=_DESKTOP_UA,
                 viewport={"width": 1280, "height": 720},
@@ -236,8 +262,11 @@ class _BrowserWorker:
             try:
                 await warm.goto("https://www.douyin.com",
                                 wait_until="domcontentloaded", timeout=15_000)
-                await warm.wait_for_timeout(3000)
-                _save_cookies(await self._ctx.cookies(), log)
+                # Visible seed: give the user time to solve captcha / scan QR.
+                await warm.wait_for_timeout(20_000 if self._visible else 3000)
+                cookies = await self._ctx.cookies()
+                _save_cookies(cookies, log)       # Netscape, for yt-dlp
+                _save_cookies_json(cookies, log)  # JSON, for pure-API
             except Exception as e:
                 log(f"  Warm-up skipped: {e}", "warn")
             finally:
@@ -423,6 +452,29 @@ class _BrowserWorker:
         except Exception:
             return ""
 
+    async def _seed_visible(self, log: Callable) -> None:
+        """Tear down any running (likely headless) browser and relaunch a VISIBLE
+        window so the user can log in / solve a captcha, then save cookies. Used
+        by the Settings "Get cookies" button — explicit, manual, one at a time."""
+        if self._ctx is not None:
+            try:
+                await self._ctx.close()
+            except Exception:
+                pass
+            self._ctx = None
+            self._browser = None
+            if self._pw is not None:
+                try:
+                    await self._pw.stop()
+                except Exception:
+                    pass
+                self._pw = None
+        self._visible = True
+        try:
+            await self._ensure_browser(log)  # visible launch + warm-up saves JSON
+        finally:
+            self._visible = False  # later auto-launches stay headless
+
 
 _worker = _BrowserWorker()
 
@@ -453,20 +505,12 @@ def _download_url(url: str, out_path: str, log: Callable, cookie: str = "") -> N
                         emit(f"  {int(pct)}%", "info", pct=pct)
 
 
-def warm_cookies(log: Callable) -> None:
-    """Launch the shared browser to grab fresh guest cookies into the store file.
-
-    Lets the reliable yt-dlp-by-ID path run on the first request when no browser
-    cookie source is available (e.g. a Mac without Chrome). The browser stays
-    warm for any later Playwright fallback.
-    """
+def seed_cookies(log: Callable) -> None:
+    """Open a VISIBLE browser to (re)seed the cookie JSON — manual Settings action.
+    Blocks while the window is open so the user can solve captcha / scan QR."""
     worker = _worker
-
-    async def _go() -> None:
-        await worker._ensure_browser(log)
-
     worker._ensure_loop()
-    asyncio.run_coroutine_threadsafe(_go(), worker._loop).result(timeout=60)
+    asyncio.run_coroutine_threadsafe(worker._seed_visible(log), worker._loop).result(timeout=180)
 
 
 def download_via_playwright(url: str, out_dir: str, log: Callable) -> str:
@@ -499,4 +543,14 @@ if __name__ == "__main__":
     assert _pick_target_url([wm]) == wm                    # only watermarked → use it
     assert _pick_target_url([clean]) == clean
     assert _pick_target_url([]) is None
+
+    # Cookie-header builder reads the JSON store and joins name=value pairs.
+    import tempfile
+    from backend import config as _cfg
+    _cfg.COOKIES_JSON_FILE = Path(tempfile.mkdtemp()) / "c.json"
+    _cfg.COOKIES_JSON_FILE.write_text(
+        json.dumps([{"name": "ttwid", "value": "abc"},
+                    {"name": "sid", "value": "xyz"}, {"value": "noname"}]),
+        encoding="utf-8")
+    assert load_cookie_header() == "ttwid=abc; sid=xyz"
     print("OK — playwright_downloader selection self-check passed")

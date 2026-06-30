@@ -147,6 +147,28 @@ class ApiService {
     }
   }
 
+  // ── Douyin cookies ──────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> cookiesStatus() async {
+    final res = await http
+        .get(Uri.parse('${ApiService.baseUrl}/cookies/status'))
+        .timeout(const Duration(seconds: 10));
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  /// Opens a real browser window on the backend machine to seed/refresh the
+  /// Douyin cookie JSON. The user solves any captcha / scans QR there.
+  Future<Map<String, dynamic>> cookiesRefresh() async {
+    final res = await http
+        .post(Uri.parse('${ApiService.baseUrl}/cookies/refresh'))
+        .timeout(const Duration(minutes: 3)); // visible browser + manual steps
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200 || body['ok'] != true) {
+      throw Exception(body['error'] ?? body['detail'] ?? 'Lấy cookie thất bại');
+    }
+    return body;
+  }
+
   Future<int> deleteRecords(List<String> recordIds) async {
     final res = await http
         .post(

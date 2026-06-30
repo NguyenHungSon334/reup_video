@@ -171,21 +171,16 @@ def download_video(
     canonical = _resolve_canonical(url, log)
     is_douyin = "douyin" in canonical
 
-    # Douyin + no cookies + no installed browser to read them from (typical on a
-    # Mac without Chrome) → yt-dlp can't download by exact video ID and we'd fall
-    # straight to the drift-prone Playwright intercept. Warm guest cookies first
-    # so the reliable yt-dlp-by-ID path below can run on the very first request.
-    if is_douyin and not has_cookies and not _browser_cookie_sources():
-        from backend.config import COOKIES_STORE_FILE
-        try:
-            from backend.services.playwright_downloader import warm_cookies
-            log("Warming Douyin cookies for yt-dlp...", "info")
-            warm_cookies(log)
-            if COOKIES_STORE_FILE.exists():
-                cookies_file = str(COOKIES_STORE_FILE)
-                has_cookies = True
-        except Exception as e:
-            log(f"Cookie warm-up failed: {e}", "warn")
+    # ── Douyin requires cookies ─────────────────────────────────────────────────
+    # Cookies are seeded once via Settings → "Lấy / Cập nhật Cookie" (visible
+    # browser, manual login/captcha). No cookie store → stop with a clear message
+    # instead of failing deep in the download with a confusing anti-bot error.
+    if is_douyin:
+        from backend.services.playwright_downloader import load_cookie_header
+        if not load_cookie_header():
+            raise RuntimeError(
+                "Chưa có cookie Douyin. Vào Settings → COOKIE DOUYIN → "
+                "'Lấy / Cập nhật Cookie' để lấy cookie trước khi tải.")
 
     # ── yt-dlp attempts ───────────────────────────────────────────────────────
     # Douyin always rejects cookieless requests ("fresh cookies needed"), so skip

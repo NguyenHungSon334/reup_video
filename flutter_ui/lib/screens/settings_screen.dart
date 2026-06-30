@@ -232,6 +232,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   appSecretCtrl: _appSecretCtrl,
                 ),
                 const SizedBox(height: 16),
+                _CookieSection(api: widget.api),
+                const SizedBox(height: 16),
               ],
             ),
           ),
@@ -1297,3 +1299,170 @@ class _SecretInput extends StatelessWidget {
 }
 
 // Download section removed
+
+// ── Douyin cookie section ─────────────────────────────────────────────────────
+
+class _CookieSection extends StatefulWidget {
+  final ApiService api;
+  const _CookieSection({required this.api});
+
+  @override
+  State<_CookieSection> createState() => _CookieSectionState();
+}
+
+class _CookieSectionState extends State<_CookieSection> {
+  bool? _hasCookies; // null = unknown
+  int _count = 0;
+  bool _checking = false;
+  bool _working = false;
+  String _msg = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    setState(() {
+      _checking = true;
+      _msg = '';
+    });
+    try {
+      final res = await widget.api.cookiesStatus();
+      if (!mounted) return;
+      setState(() {
+        _hasCookies = res['has_cookies'] as bool? ?? false;
+        _count = res['count'] as int? ?? 0;
+        _checking = false;
+      });
+    } on Exception catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hasCookies = false;
+        _msg = 'Không thể kết nối backend: $e';
+        _checking = false;
+      });
+    }
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _working = true;
+      _msg = 'Đang mở trình duyệt — đăng nhập / giải captcha nếu được hỏi...';
+    });
+    try {
+      final res = await widget.api.cookiesRefresh();
+      if (!mounted) return;
+      final ok = res['ok'] as bool? ?? false;
+      setState(() {
+        _hasCookies = ok;
+        _working = false;
+        _msg = ok ? 'Đã lấy cookie thành công.' : 'Không lấy được cookie.';
+      });
+      await _check();
+    } on Exception catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _msg = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PanelCard(
+      title: 'COOKIE DOUYIN',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _checking
+                  ? const SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 1.5, color: kMuted))
+                  : Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _hasCookies == null
+                            ? kMuted
+                            : _hasCookies!
+                                ? kGreen
+                                : kRed,
+                      ),
+                    ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _checking
+                      ? 'Đang kiểm tra...'
+                      : _hasCookies == true
+                          ? 'Đã có cookie ($_count mục)'
+                          : _msg.isNotEmpty
+                              ? _msg
+                              : 'Chưa có cookie',
+                  style: TextStyle(
+                    color: _hasCookies == true ? kGreen : kTextDim,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _checking ? null : _check,
+                icon: const Icon(Icons.refresh_rounded, size: 13),
+                label: const Text('Kiểm tra', style: TextStyle(fontSize: 11)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kTextDim,
+                  side: const BorderSide(color: kBorder),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 6),
+              ElevatedButton.icon(
+                onPressed: (_working || _checking) ? null : _refresh,
+                icon: _working
+                    ? const SizedBox(
+                        width: 11,
+                        height: 11,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 1.5, color: Colors.white))
+                    : const Icon(Icons.cookie_rounded, size: 13),
+                label: Text(_working ? 'Đang lấy...' : 'Lấy / Cập nhật Cookie',
+                    style: const TextStyle(fontSize: 11)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kAccent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  elevation: 0,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Bấm "Lấy / Cập nhật Cookie" để mở trình duyệt, đăng nhập Douyin '
+            '(hoặc giải captcha/QR nếu được hỏi). Cookie sẽ lưu lại cho lần tải sau.',
+            style: TextStyle(color: kMuted, fontSize: 10.5, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+}

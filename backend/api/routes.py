@@ -312,6 +312,39 @@ def GDRIVE_OK_CHECK() -> bool:
         return False
 
 
+@router.get("/cookies/status")
+async def cookies_status():
+    """Whether the Douyin cookie JSON store exists, and how many cookies it has."""
+    import json as _json
+    from ..config import COOKIES_JSON_FILE
+    if not COOKIES_JSON_FILE.exists() or COOKIES_JSON_FILE.stat().st_size == 0:
+        return {"has_cookies": False}
+    try:
+        cookies = _json.loads(COOKIES_JSON_FILE.read_text(encoding="utf-8"))
+        return {"has_cookies": bool(cookies), "count": len(cookies),
+                "updated": int(COOKIES_JSON_FILE.stat().st_mtime)}
+    except Exception as exc:
+        return {"has_cookies": False, "reason": str(exc)}
+
+
+@router.post("/cookies/refresh")
+async def cookies_refresh():
+    """Open a real browser window to seed/refresh the Douyin cookie JSON. Solve any
+    captcha / scan QR in the window; cookies save when it finishes."""
+    logs: list[dict] = []
+
+    def push(msg: str, t: str = "info") -> None:
+        logs.append({"type": t, "message": msg})
+
+    loop = asyncio.get_running_loop()
+    try:
+        from ..services.playwright_downloader import seed_cookies, load_cookie_header
+        await loop.run_in_executor(None, lambda: seed_cookies(push))
+        return {"ok": bool(load_cookie_header()), "logs": logs}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "logs": logs}
+
+
 @router.get("/lark/fields")
 async def get_lark_fields():
     """Return the field names in the Lark table — use this to configure field mapping."""
