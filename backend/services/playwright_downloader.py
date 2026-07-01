@@ -326,6 +326,64 @@ class _BrowserWorker:
                 "(logged-in session).", "info")
         return ok
 
+    async def _is_captcha_page(self, page) -> bool:
+        """Douyin serves a '验证码中间页' verify wall instead of the video when its
+        anti-bot trips. Detect it by title/URL so we can hand it to the user."""
+        try:
+            title = await page.title()
+        except Exception:
+            title = ""
+        if "验证码" in title or "verify" in title.lower():
+            return True
+        u = page.url.lower()
+        return "captcha" in u or "verifycenter" in u or "/verify" in u
+
+    async def _go_visible(self, log: Callable) -> None:
+        """Tear down the (headless) context and relaunch a VISIBLE window so the
+        user can solve a captcha. Current window stays visible; the next auto
+        launch reverts to headless."""
+        if self._ctx is not None:
+            try:
+                await self._ctx.close()
+            except Exception:
+                pass
+            self._ctx = None
+            self._browser = None
+            if self._pw is not None:
+                try:
+                    await self._pw.stop()
+                except Exception:
+                    pass
+                self._pw = None
+        self._visible = True
+        try:
+            await self._ensure_browser(log)
+        finally:
+            self._visible = False
+
+    async def _wait_captcha_cleared(self, page, video_url: str, log: Callable,
+                                    timeout_s: int = 180) -> None:
+        """Block while the user solves the captcha in the visible window. Once the
+        verify page clears, make sure we're back on the target video, then return.
+        The persistent profile keeps the verify token, so later downloads skip it."""
+        log("  Solve the captcha in the browser window — waiting up to 3 min...", "warn")
+        tid = _extract_aweme_id(video_url)
+        for _ in range(timeout_s):
+            await page.wait_for_timeout(1000)
+            if not await self._is_captcha_page(page):
+                if tid and tid not in page.url:
+                    try:
+                        await page.goto(video_url, wait_until="domcontentloaded",
+                                        timeout=20_000)
+                    except Exception:
+                        pass
+                    # a fresh nav can bounce back to captcha; re-check once
+                    if await self._is_captcha_page(page):
+                        continue
+                log("  Captcha cleared — continuing download.", "info")
+                return
+        raise RuntimeError("Captcha not solved in time (Douyin verify wall)")
+
     async def _fetch(self, video_page_url: str, log: Callable, timeout_ms: int = 45_000) -> str:
         await self._ensure_browser(log)
         from playwright.async_api import Request, Response, Route
@@ -392,20 +450,33 @@ class _BrowserWorker:
             except Exception:
                 pass
 
-        page = await self._ctx.new_page()
-        page.on("response", on_detail)
-        page.on("request", on_request)
-        page.on("request", on_request_dbg)
-        page.on("response", on_response)
-        await page.route("**/*", block_extra_videos)
-        try:
+        async def open_and_nav():
             # Direct navigation to the target only — no homepage feed to confuse
             # interception (cookies already warm on the shared context).
+            p = await self._ctx.new_page()
+            p.on("response", on_detail)
+            p.on("request", on_request)
+            p.on("request", on_request_dbg)
+            p.on("response", on_response)
+            await p.route("**/*", block_extra_videos)
             log(f"  Navigating: {video_page_url}", "info")
             try:
-                await page.goto(video_page_url, wait_until="domcontentloaded", timeout=timeout_ms)
+                await p.goto(video_page_url, wait_until="domcontentloaded", timeout=timeout_ms)
             except Exception:
                 pass
+            return p
+
+        page = await open_and_nav()
+        try:
+            # Captcha wall ('验证码中间页'): Douyin redirects to a verify page instead
+            # of the video. Can't solve headless — relaunch a visible window, let the
+            # user solve it, then re-navigate on the fresh (now-trusted) session.
+            if await self._is_captcha_page(page):
+                log("  Captcha wall detected — opening browser window to solve.", "warn")
+                await page.close()
+                await self._go_visible(log)
+                page = await open_and_nav()
+                await self._wait_captcha_cleared(page, video_page_url, log)
 
             # Guard: confirm we actually landed on the requested video, not a
             # redirect to a feed/recommended page. Anything captured on a drifted
@@ -509,7 +580,7 @@ class _BrowserWorker:
             raise RuntimeError("Playwright: no video URL intercepted from Douyin page")
         return url
 
-    def fetch_video_url(self, url: str, log: Callable, timeout: float = 120) -> str:
+    def fetch_video_url(self, url: str, log: Callable, timeout: float = 260) -> str:
         self._ensure_loop()
         fut = asyncio.run_coroutine_threadsafe(self._fetch(url, log), self._loop)
         return fut.result(timeout=timeout)

@@ -9,7 +9,7 @@ on:
 # Tag pushes (v*) override it from the tag in each job's "Resolve version" step,
 # so the git tag is the single source of truth for the release version.
 env:
-  APP_VERSION: "2.1.23"
+  APP_VERSION: "2.1.24"
 
 jobs:
   # ── Windows: backend EXE + Flutter desktop + Inno Setup ─────────────────

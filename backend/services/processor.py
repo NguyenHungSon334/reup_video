@@ -99,7 +99,14 @@ def process_video(
         shutil.copy2(src, dst)
         return dst
 
-    cmd = [_ffmpeg_exe(), "-y", "-threads", "2", "-i", src]
+    cmd = [_ffmpeg_exe(), "-y", "-threads", "2"]
+    # Override possibly-invalid/unspecified color metadata on the source BEFORE
+    # decode. Some Douyin clips tag a colorspace the overlay buffersrc rejects
+    # outright ("[graph 0 input] Invalid color space"), which happens before any
+    # setparams filter can run. Forcing valid tags on the input fixes it.
+    cmd += ["-colorspace", "bt709", "-color_primaries", "bt709",
+            "-color_trc", "bt709", "-color_range", "tv"]
+    cmd += ["-i", src]
     logo_idx = music_idx = None
 
     if logo:
@@ -116,13 +123,19 @@ def process_video(
     if logo:
         pos = _LOGO_POSITIONS.get(logo_position, "10:10")
         opacity = max(0.0, min(1.0, logo_opacity))
+        # Normalize the base video's pixel format + color metadata before overlay.
+        # Some Douyin clips carry an invalid/variable color space that makes the
+        # overlay filter reinit mid-stream and abort ("Invalid color space" /
+        # "Error reinitializing filters"). Pinning params here prevents the reinit.
+        base = ("[0:v]format=yuv420p,"
+                "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709[base];")
         if opacity < 1.0:
             filters.append(
                 f"[{logo_idx}:v]scale={logo_scale}:-1,format=rgba,colorchannelmixer=aa={opacity:.2f}[wm];"
-                f"[0:v][wm]overlay={pos}[vout]"
+                f"{base}[base][wm]overlay={pos}[vout]"
             )
         else:
-            filters.append(f"[{logo_idx}:v]scale={logo_scale}:-1[wm];[0:v][wm]overlay={pos}[vout]")
+            filters.append(f"[{logo_idx}:v]scale={logo_scale}:-1[wm];{base}[base][wm]overlay={pos}[vout]")
         maps += ["-map", "[vout]"]
         codec_opts += _select_video_encoder(log)[1]
     else:
