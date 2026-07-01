@@ -381,6 +381,14 @@ def _to_netscape(cookies: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+@router.get("/cookies/raw")
+async def cookies_raw():
+    """Saved cookies as a 'name=value; ...' header string, so the Settings box can
+    show what was previously entered instead of starting empty each time."""
+    from ..services.playwright_downloader import load_cookie_header
+    return {"cookie": load_cookie_header()}
+
+
 @router.post("/cookies/set")
 async def cookies_set(payload: dict):
     """Save cookies pasted by the user and report which key cookies are present.

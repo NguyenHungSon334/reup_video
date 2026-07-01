@@ -156,6 +156,16 @@ class ApiService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
+  /// Previously-saved cookies as a 'a=b; c=d' string (empty if none), so the
+  /// Settings box can pre-fill instead of starting blank.
+  Future<String> cookiesRaw() async {
+    final res = await http
+        .get(Uri.parse('${ApiService.baseUrl}/cookies/raw'))
+        .timeout(const Duration(seconds: 10));
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return body['cookie'] as String? ?? '';
+  }
+
   /// Saves cookies the user pasted (JSON array, JSON object, or 'a=b; c=d'
   /// header string) and reports which key cookies are present.
   Future<Map<String, dynamic>> cookiesSet(String text) async {

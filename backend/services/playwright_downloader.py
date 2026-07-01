@@ -259,28 +259,25 @@ class _BrowserWorker:
             # Inject the user's saved cookies (pasted in Settings) so the browser
             # is actually logged in — otherwise it's a guest session and Douyin's
             # anti-bot returns "fresh cookies needed" / drifts to a feed page.
-            injected = await self._inject_saved_cookies(log)
+            await self._inject_saved_cookies(log)
 
-            # Warm-up only exists to seed the anti-bot ttwid guest cookie. If the
-            # pasted cookies already carry ttwid we skip it entirely — no extra
-            # page load, and no overwrite of the user's logged-in cookie store.
-            # (A visible seed still runs it so the user can solve captcha / QR.)
-            if self._visible or "ttwid" not in injected:
-                warm = await self._ctx.new_page()
-                log("  Pre-visiting douyin.com (one-time warm-up)...", "info")
-                try:
-                    await warm.goto("https://www.douyin.com",
-                                    wait_until="domcontentloaded", timeout=15_000)
-                    await warm.wait_for_timeout(20_000 if self._visible else 3000)
-                    cookies = await self._ctx.cookies()
-                    _save_cookies(cookies, log)       # Netscape, for yt-dlp
-                    _save_cookies_json(cookies, log)  # JSON, for pure-API
-                except Exception as e:
-                    log(f"  Warm-up skipped: {e}", "warn")
-                finally:
-                    await warm.close()
-            else:
-                log("  Cookies already have ttwid — skipping warm-up.", "info")
+            # Warm-up: visit douyin.com first so the logged-in session is
+            # established on the origin before we hit the video page. Skipping this
+            # left a cold direct-nav that never hydrated / never fired the
+            # aweme/detail XHR → "no video URL intercepted". Keep it.
+            warm = await self._ctx.new_page()
+            log("  Pre-visiting douyin.com (one-time warm-up)...", "info")
+            try:
+                await warm.goto("https://www.douyin.com",
+                                wait_until="domcontentloaded", timeout=15_000)
+                await warm.wait_for_timeout(20_000 if self._visible else 3000)
+                cookies = await self._ctx.cookies()
+                _save_cookies(cookies, log)       # Netscape, for yt-dlp
+                _save_cookies_json(cookies, log)  # JSON, for pure-API
+            except Exception as e:
+                log(f"  Warm-up skipped: {e}", "warn")
+            finally:
+                await warm.close()
 
     async def _inject_saved_cookies(self, log: Callable) -> set[str]:
         """Load cookies from the JSON store (seeded by the Settings paste box) into
@@ -297,6 +294,11 @@ class _BrowserWorker:
             name, value = c.get("name"), c.get("value")
             if not name:
                 continue
+            # Force progressive MP4 delivery: a logged-in DASH account (is_dash_user=1)
+            # makes Douyin serve segmented .m4s over MPD, which none of our extractors
+            # (network .mp4 / play_addr url_list) can grab → "no URL intercepted".
+            if name == "is_dash_user":
+                value = "0"
             pw_cookies.append({
                 "name": name,
                 "value": str(value),
@@ -305,14 +307,24 @@ class _BrowserWorker:
             })
         if not pw_cookies:
             return set()
+        # add_cookies is atomic: one malformed cookie rejects the whole batch
+        # ("Invalid cookie fields"). Try the batch first, then fall back to
+        # per-cookie so a single bad entry can't drop the login cookies.
         try:
             await self._ctx.add_cookies(pw_cookies)
-            log(f"  Injected {len(pw_cookies)} saved cookies (logged-in session).",
-                "info")
-            return {c["name"] for c in pw_cookies}
-        except Exception as e:
-            log(f"  Cookie injection skipped: {e}", "warn")
-            return set()
+            ok = {c["name"] for c in pw_cookies}
+        except Exception:
+            ok = set()
+            for c in pw_cookies:
+                try:
+                    await self._ctx.add_cookies([c])
+                    ok.add(c["name"])
+                except Exception as e:
+                    log(f"  Skipped bad cookie {c['name']}: {e}", "warn")
+        if ok:
+            log(f"  Injected {len(ok)}/{len(pw_cookies)} saved cookies "
+                "(logged-in session).", "info")
+        return ok
 
     async def _fetch(self, video_page_url: str, log: Callable, timeout_ms: int = 45_000) -> str:
         await self._ensure_browser(log)
@@ -321,6 +333,7 @@ class _BrowserWorker:
         target_id = _extract_aweme_id(video_page_url)
         found: list[str] = []
         detail_urls: list[str] = []  # play_addr from the aweme/detail API response
+        api_hits: list[str] = []     # diagnostics: aweme API + CDN requests seen
 
         async def on_detail(resp: "Response") -> None:
             # Most reliable source: Douyin's own detail API returns the exact
@@ -341,6 +354,12 @@ class _BrowserWorker:
                     detail_urls.append(u)
             if detail_urls:
                 log(f"  Got play_addr from aweme/detail API ({target_id}).", "info")
+
+        def on_request_dbg(req: "Request") -> None:
+            url = req.url
+            if "/aweme/" in url or any(h in url for h in _CDN_HOSTS):
+                if url not in api_hits:
+                    api_hits.append(url)
 
         def on_request(req: "Request") -> None:
             url = req.url
@@ -376,6 +395,7 @@ class _BrowserWorker:
         page = await self._ctx.new_page()
         page.on("response", on_detail)
         page.on("request", on_request)
+        page.on("request", on_request_dbg)
         page.on("response", on_response)
         await page.route("**/*", block_extra_videos)
         try:
@@ -460,6 +480,27 @@ class _BrowserWorker:
                         log(f"  Got video src: {src[:80]}...", "info")
                 except Exception:
                     pass
+            # Diagnostics on failure: reveal what Douyin actually served so we can
+            # tell "page blocked" (no media at all) from "DASH/blob" (media but
+            # unusable format) from "wrong extractor" (data present, we missed it).
+            if not found and not detail_urls:
+                try:
+                    title = await page.title()
+                except Exception:
+                    title = "?"
+                try:
+                    vinfo = await page.evaluate(
+                        "() => { const v = document.querySelector('video');"
+                        " return v ? {count: document.querySelectorAll('video').length,"
+                        " src: (v.currentSrc||v.src||'').slice(0,60)} : {count: 0, src: ''}; }")
+                except Exception:
+                    vinfo = {"count": 0, "src": ""}
+                cdn = [u for u in api_hits if any(h in u for h in _CDN_HOSTS)]
+                log(f"  [dbg] FAIL url={page.url[:90]}", "warn")
+                log(f"  [dbg] title={title!r} video={vinfo}", "warn")
+                log(f"  [dbg] api/CDN requests seen={len(api_hits)}, CDN media={len(cdn)}", "warn")
+                for u in api_hits[:12]:
+                    log(f"  [dbg] hit: {u[:110]}", "warn")
         finally:
             await page.close()  # free the tab; browser stays alive for reuse
 

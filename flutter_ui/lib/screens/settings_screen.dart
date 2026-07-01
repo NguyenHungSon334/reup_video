@@ -1344,6 +1344,14 @@ class _CookieSectionState extends State<_CookieSection> {
         _count = res['count'] as int? ?? 0;
         _checking = false;
       });
+      // Pre-fill the box with previously-saved cookies (only if user hasn't
+      // typed anything), so it shows what's stored instead of starting blank.
+      if (_cookieCtrl.text.trim().isEmpty) {
+        final raw = await widget.api.cookiesRaw();
+        if (mounted && _cookieCtrl.text.trim().isEmpty && raw.isNotEmpty) {
+          _cookieCtrl.text = raw;
+        }
+      }
     } on Exception catch (e) {
       if (!mounted) return;
       setState(() {
