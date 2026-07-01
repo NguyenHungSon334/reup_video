@@ -27,18 +27,18 @@ class Sidebar extends StatelessWidget {
                   width: 34,
                   height: 34,
                   decoration: BoxDecoration(
-                    color: kAccent,
+                    color: Colors.black, // logo is white-on-black; blend the bg
                     borderRadius: BorderRadius.circular(10),
                     boxShadow: const [
                       BoxShadow(
-                        color: Color(0x402563EB),
+                        color: Color(0x33000000),
                         blurRadius: 12,
                         offset: Offset(0, 4),
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.play_arrow_rounded,
-                      color: Colors.white, size: 20),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset('assets/Logo.png', fit: BoxFit.cover),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -46,10 +46,10 @@ class Sidebar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'ReupPro',
+                        'Hồn Đá Reup',
                         style: TextStyle(
                           color: kText,
-                          fontSize: 16,
+                          fontSize: 15,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.3,
                         ),

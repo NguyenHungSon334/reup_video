@@ -156,15 +156,19 @@ class ApiService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
-  /// Opens a real browser window on the backend machine to seed/refresh the
-  /// Douyin cookie JSON. The user solves any captcha / scans QR there.
-  Future<Map<String, dynamic>> cookiesRefresh() async {
+  /// Saves cookies the user pasted (JSON array, JSON object, or 'a=b; c=d'
+  /// header string) and reports which key cookies are present.
+  Future<Map<String, dynamic>> cookiesSet(String text) async {
     final res = await http
-        .post(Uri.parse('${ApiService.baseUrl}/cookies/refresh'))
-        .timeout(const Duration(minutes: 3)); // visible browser + manual steps
+        .post(
+          Uri.parse('${ApiService.baseUrl}/cookies/set'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'text': text}),
+        )
+        .timeout(const Duration(seconds: 15));
     final body = jsonDecode(res.body) as Map<String, dynamic>;
     if (res.statusCode != 200 || body['ok'] != true) {
-      throw Exception(body['error'] ?? body['detail'] ?? 'Lấy cookie thất bại');
+      throw Exception(body['error'] ?? body['detail'] ?? 'Lưu cookie thất bại');
     }
     return body;
   }

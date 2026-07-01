@@ -111,6 +111,14 @@ jobs:
           # Allow Flutter to reach backend on localhost:8765 (blocked by App Sandbox by default)
           /usr/libexec/PlistBuddy -c "Add :com.apple.security.network.client bool true" macos/Runner/Release.entitlements
           /usr/libexec/PlistBuddy -c "Add :com.apple.security.network.client bool true" macos/Runner/DebugProfile.entitlements
+          # Brand the generated macOS app: icon from Logo.png + display name.
+          # (macos/ is recreated by `flutter create` each run, so this lives here.)
+          ICONSET=macos/Runner/Assets.xcassets/AppIcon.appiconset
+          for s in 16 32 64 128 256 512 1024; do
+            sips -z $s $s assets/Logo.png --out "$ICONSET/app_icon_$s.png" >/dev/null
+          done
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleDisplayName string Hồn Đá Reup' macos/Runner/Info.plist \
+            || /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Hồn Đá Reup' macos/Runner/Info.plist
           flutter build macos --release
 
       - uses: actions/setup-python@v5.3.0
@@ -138,10 +146,10 @@ jobs:
         run: |
           # Use PyInstaller's own bundle (correct Frameworks/Python layout) as base
           mkdir -p dist/dmg_staging
-          cp -r dist/ReupVideo.app "dist/dmg_staging/Reup Video.app"
+          cp -r dist/ReupVideo.app "dist/dmg_staging/Hồn Đá Reup.app"
 
-          MACOS="dist/dmg_staging/Reup Video.app/Contents/MacOS"
-          RESOURCES="dist/dmg_staging/Reup Video.app/Contents/Resources"
+          MACOS="dist/dmg_staging/Hồn Đá Reup.app/Contents/MacOS"
+          RESOURCES="dist/dmg_staging/Hồn Đá Reup.app/Contents/Resources"
 
           # Rename main executable
           mv "$MACOS/ReupVideo" "$MACOS/ReupVideo-backend"
@@ -155,7 +163,7 @@ jobs:
           # Replace PyInstaller Info.plist with ours
           sed "s/APP_VERSION_PLACEHOLDER/${{ env.APP_VERSION }}/g" \
             assets/macos/Info.plist \
-            > "dist/dmg_staging/Reup Video.app/Contents/Info.plist"
+            > "dist/dmg_staging/Hồn Đá Reup.app/Contents/Info.plist"
 
           cp assets/icon.icns "$RESOURCES/icon.icns"
 
@@ -169,13 +177,13 @@ jobs:
 
           mkdir -p dist/installer_mac
           create-dmg \
-            --volname "Reup Video" \
+            --volname "Hồn Đá Reup" \
             --volicon "assets/icon.icns" \
             --window-pos 200 120 \
             --window-size 660 450 \
             --icon-size 100 \
-            --icon "Reup Video.app" 160 200 \
-            --hide-extension "Reup Video.app" \
+            --icon "Hồn Đá Reup.app" 160 200 \
+            --hide-extension "Hồn Đá Reup.app" \
             --app-drop-link 500 200 \
             --icon "Install.command" 160 350 \
             "dist/installer_mac/ReupVideo_mac_${{ env.APP_VERSION }}.dmg" \

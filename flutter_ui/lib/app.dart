@@ -8,7 +8,7 @@ class ReupApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Douyin Reup Pro',
+      title: 'Hồn Đá Reup',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.light().copyWith(
         scaffoldBackgroundColor: kBg,

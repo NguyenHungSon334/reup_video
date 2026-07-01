@@ -1316,11 +1316,19 @@ class _CookieSectionState extends State<_CookieSection> {
   bool _checking = false;
   bool _working = false;
   String _msg = '';
+  bool _msgIsError = false;
+  final _cookieCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _check();
+  }
+
+  @override
+  void dispose() {
+    _cookieCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _check() async {
@@ -1346,26 +1354,38 @@ class _CookieSectionState extends State<_CookieSection> {
     }
   }
 
-  Future<void> _refresh() async {
+  Future<void> _save() async {
+    final text = _cookieCtrl.text.trim();
+    if (text.isEmpty) {
+      setState(() {
+        _msg = 'Dán cookie vào ô trước đã.';
+        _msgIsError = true;
+      });
+      return;
+    }
     setState(() {
       _working = true;
-      _msg = 'Đang mở trình duyệt — đăng nhập / giải captcha nếu được hỏi...';
+      _msg = '';
+      _msgIsError = false;
     });
     try {
-      final res = await widget.api.cookiesRefresh();
+      final res = await widget.api.cookiesSet(text);
       if (!mounted) return;
-      final ok = res['ok'] as bool? ?? false;
+      final count = res['count'] as int? ?? 0;
+      final warn = res['warn'] as String?;
       setState(() {
-        _hasCookies = ok;
         _working = false;
-        _msg = ok ? 'Đã lấy cookie thành công.' : 'Không lấy được cookie.';
+        _hasCookies = count > 0;
+        _count = count;
+        _msg = warn ?? 'Đã lưu $count cookie. Sẵn sàng tải.';
+        _msgIsError = warn != null;
       });
-      await _check();
     } on Exception catch (e) {
       if (!mounted) return;
       setState(() {
         _working = false;
         _msg = e.toString().replaceFirst('Exception: ', '');
+        _msgIsError = true;
       });
     }
   }
@@ -1429,17 +1449,58 @@ class _CookieSectionState extends State<_CookieSection> {
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
-              const SizedBox(width: 6),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _cookieCtrl,
+            maxLines: 5,
+            minLines: 3,
+            style: const TextStyle(
+                color: kText, fontSize: 11, fontFamily: 'monospace'),
+            decoration: InputDecoration(
+              hintText: 'Dán cookie Douyin vào đây\n'
+                  '(dạng "ttwid=xxx; sessionid=yyy" hoặc JSON export)',
+              hintStyle: const TextStyle(color: kMuted, fontSize: 10.5),
+              filled: true,
+              fillColor: kBg,
+              contentPadding: const EdgeInsets.all(10),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: kBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: kAccent),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _msg.isEmpty
+                    ? const SizedBox.shrink()
+                    : Text(
+                        _msg,
+                        style: TextStyle(
+                          color: _msgIsError ? kRed : kGreen,
+                          fontSize: 10.5,
+                          height: 1.3,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 8),
               ElevatedButton.icon(
-                onPressed: (_working || _checking) ? null : _refresh,
+                onPressed: (_working || _checking) ? null : _save,
                 icon: _working
                     ? const SizedBox(
                         width: 11,
                         height: 11,
                         child: CircularProgressIndicator(
                             strokeWidth: 1.5, color: Colors.white))
-                    : const Icon(Icons.cookie_rounded, size: 13),
-                label: Text(_working ? 'Đang lấy...' : 'Lấy / Cập nhật Cookie',
+                    : const Icon(Icons.save_rounded, size: 13),
+                label: Text(_working ? 'Đang lưu...' : 'Lưu & Kiểm tra Cookie',
                     style: const TextStyle(fontSize: 11)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kAccent,
@@ -1457,8 +1518,8 @@ class _CookieSectionState extends State<_CookieSection> {
           ),
           const SizedBox(height: 10),
           const Text(
-            'Bấm "Lấy / Cập nhật Cookie" để mở trình duyệt, đăng nhập Douyin '
-            '(hoặc giải captcha/QR nếu được hỏi). Cookie sẽ lưu lại cho lần tải sau.',
+            'Mở douyin.com đã đăng nhập → DevTools (F12) → Application → Cookies, '
+            'copy chuỗi cookie rồi dán vào ô trên. Cần có ttwid và sessionid.',
             style: TextStyle(color: kMuted, fontSize: 10.5, height: 1.4),
           ),
         ],

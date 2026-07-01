@@ -256,21 +256,63 @@ class _BrowserWorker:
                 window.chrome = { runtime: {} };
             """)
 
-            # One-time warm-up: get ttwid/guest cookies, then save for yt-dlp.
-            warm = await self._ctx.new_page()
-            log("  Pre-visiting douyin.com (one-time warm-up)...", "info")
-            try:
-                await warm.goto("https://www.douyin.com",
-                                wait_until="domcontentloaded", timeout=15_000)
-                # Visible seed: give the user time to solve captcha / scan QR.
-                await warm.wait_for_timeout(20_000 if self._visible else 3000)
-                cookies = await self._ctx.cookies()
-                _save_cookies(cookies, log)       # Netscape, for yt-dlp
-                _save_cookies_json(cookies, log)  # JSON, for pure-API
-            except Exception as e:
-                log(f"  Warm-up skipped: {e}", "warn")
-            finally:
-                await warm.close()
+            # Inject the user's saved cookies (pasted in Settings) so the browser
+            # is actually logged in — otherwise it's a guest session and Douyin's
+            # anti-bot returns "fresh cookies needed" / drifts to a feed page.
+            injected = await self._inject_saved_cookies(log)
+
+            # Warm-up only exists to seed the anti-bot ttwid guest cookie. If the
+            # pasted cookies already carry ttwid we skip it entirely — no extra
+            # page load, and no overwrite of the user's logged-in cookie store.
+            # (A visible seed still runs it so the user can solve captcha / QR.)
+            if self._visible or "ttwid" not in injected:
+                warm = await self._ctx.new_page()
+                log("  Pre-visiting douyin.com (one-time warm-up)...", "info")
+                try:
+                    await warm.goto("https://www.douyin.com",
+                                    wait_until="domcontentloaded", timeout=15_000)
+                    await warm.wait_for_timeout(20_000 if self._visible else 3000)
+                    cookies = await self._ctx.cookies()
+                    _save_cookies(cookies, log)       # Netscape, for yt-dlp
+                    _save_cookies_json(cookies, log)  # JSON, for pure-API
+                except Exception as e:
+                    log(f"  Warm-up skipped: {e}", "warn")
+                finally:
+                    await warm.close()
+            else:
+                log("  Cookies already have ttwid — skipping warm-up.", "info")
+
+    async def _inject_saved_cookies(self, log: Callable) -> set[str]:
+        """Load cookies from the JSON store (seeded by the Settings paste box) into
+        the browser context so the session is authenticated. Pasted cookies carry
+        only name/value, so default the domain/path to .douyin.com. Returns the set
+        of injected cookie names so the caller can skip warm-up when ttwid is set."""
+        from backend.config import COOKIES_JSON_FILE
+        try:
+            saved = json.loads(COOKIES_JSON_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return set()
+        pw_cookies = []
+        for c in saved:
+            name, value = c.get("name"), c.get("value")
+            if not name:
+                continue
+            pw_cookies.append({
+                "name": name,
+                "value": str(value),
+                "domain": c.get("domain") or ".douyin.com",
+                "path": c.get("path") or "/",
+            })
+        if not pw_cookies:
+            return set()
+        try:
+            await self._ctx.add_cookies(pw_cookies)
+            log(f"  Injected {len(pw_cookies)} saved cookies (logged-in session).",
+                "info")
+            return {c["name"] for c in pw_cookies}
+        except Exception as e:
+            log(f"  Cookie injection skipped: {e}", "warn")
+            return set()
 
     async def _fetch(self, video_page_url: str, log: Callable, timeout_ms: int = 45_000) -> str:
         await self._ensure_browser(log)

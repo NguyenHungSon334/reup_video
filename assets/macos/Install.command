@@ -5,17 +5,17 @@
 set -e
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SRC="$HERE/Reup Video.app"
-DEST="/Applications/Reup Video.app"
+SRC="$HERE/Hồn Đá Reup.app"
+DEST="/Applications/Hồn Đá Reup.app"
 
-echo "Installing Reup Video to /Applications..."
+echo "Installing Hồn Đá Reup to /Applications..."
 rm -rf "$DEST"
 cp -R "$SRC" "$DEST"
 
 echo "Removing quarantine flag..."
 xattr -cr "$DEST"
 
-echo "Launching Reup Video..."
+echo "Launching Hồn Đá Reup..."
 open "$DEST"
 
-echo "Done! Reup Video is installed in your Applications folder."
+echo "Done! Hồn Đá Reup is installed in your Applications folder."

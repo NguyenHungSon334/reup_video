@@ -327,6 +327,85 @@ async def cookies_status():
         return {"has_cookies": False, "reason": str(exc)}
 
 
+def _parse_cookies_text(text: str) -> list[dict]:
+    """Parse pasted cookies into the JSON list store format [{name,value}, ...].
+    Accepts: a JSON array of cookie objects (browser-extension export), a JSON
+    object {name: value}, or a raw header string 'a=b; c=d'."""
+    import json as _json
+    text = (text or "").strip()
+    if not text:
+        return []
+    # JSON array or object
+    if text[0] in "[{":
+        try:
+            data = _json.loads(text)
+        except Exception:
+            data = None
+        if isinstance(data, list):
+            out = []
+            for c in data:
+                if isinstance(c, dict) and c.get("name") and "value" in c:
+                    out.append({"name": str(c["name"]), "value": str(c["value"])})
+            if out:
+                return out
+        elif isinstance(data, dict):
+            return [{"name": str(k), "value": str(v)} for k, v in data.items() if k]
+    # header string: a=b; c=d
+    out = []
+    for part in text.replace("\n", ";").split(";"):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        name, _, value = part.partition("=")
+        name = name.strip()
+        if name:
+            out.append({"name": name, "value": value.strip()})
+    return out
+
+
+# Cookies Douyin depends on for auth / anti-bot; report which are present.
+_KEY_COOKIES = ("sessionid", "sessionid_ss", "ttwid", "passport_csrf_token")
+
+
+def _to_netscape(cookies: list[dict]) -> str:
+    """Render cookies as a Netscape cookies.txt — the format yt-dlp's
+    `cookiefile` expects. All cookies scoped to .douyin.com (subdomains on)."""
+    # ponytail: fixed 1-year expiry; Douyin session cookies outlive one download.
+    expiry = int(time.time()) + 365 * 24 * 3600
+    lines = ["# Netscape HTTP Cookie File"]
+    for c in cookies:
+        name = c["name"]
+        value = c["value"]
+        lines.append(
+            f".douyin.com\tTRUE\t/\tFALSE\t{expiry}\t{name}\t{value}")
+    return "\n".join(lines) + "\n"
+
+
+@router.post("/cookies/set")
+async def cookies_set(payload: dict):
+    """Save cookies pasted by the user and report which key cookies are present.
+    Writes BOTH stores: the JSON store (Playwright/httpx header path) and the
+    Netscape cookies.txt that yt-dlp reads via cookiefile.
+    ponytail: presence check, not a live Douyin request — that path is fragile."""
+    import json as _json
+    from ..config import COOKIES_JSON_FILE, COOKIES_STORE_FILE, save_config
+    cookies = _parse_cookies_text(payload.get("text", ""))
+    if not cookies:
+        return {"ok": False, "error": "Không đọc được cookie nào từ nội dung dán."}
+    names = {c["name"] for c in cookies}
+    present = [k for k in _KEY_COOKIES if k in names]
+    try:
+        COOKIES_JSON_FILE.parent.mkdir(parents=True, exist_ok=True)
+        COOKIES_JSON_FILE.write_text(_json.dumps(cookies), encoding="utf-8")
+        # yt-dlp cookiefile: write Netscape store + point config at it.
+        save_config({"cookies_text": _to_netscape(cookies)})
+    except Exception as exc:
+        return {"ok": False, "error": f"Lưu cookie thất bại: {exc}"}
+    return {"ok": True, "count": len(cookies), "key_cookies": present,
+            "warn": None if present else
+            "Thiếu cookie đăng nhập (sessionid/ttwid) — có thể tải sẽ lỗi."}
+
+
 @router.post("/cookies/refresh")
 async def cookies_refresh():
     """Open a real browser window to seed/refresh the Douyin cookie JSON. Solve any

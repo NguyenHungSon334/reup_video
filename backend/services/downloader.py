@@ -183,15 +183,16 @@ def download_video(
                 "'Lấy / Cập nhật Cookie' để lấy cookie trước khi tải.")
 
     # ── yt-dlp attempts ───────────────────────────────────────────────────────
-    # Douyin always rejects cookieless requests ("fresh cookies needed"), so skip
-    # that dead attempt and go straight to cookies → Playwright.
+    # yt-dlp's Douyin extractor always fails ("fresh cookies needed") regardless
+    # of cookies, so skip it entirely for Douyin and go straight to the
+    # cookie-injected Playwright path. Other sites still use yt-dlp normally.
     ytdlp_variants: list[tuple[str, str | None, str | None]] = []
     if not is_douyin:
         ytdlp_variants.append(("yt-dlp (no cookies)", None, None))
-    if has_cookies:
-        ytdlp_variants.append(("yt-dlp (cookies file)", cookies_file, None))
-    for browser in _browser_cookie_sources():
-        ytdlp_variants.append((f"yt-dlp (browser:{browser})", None, browser))
+        if has_cookies:
+            ytdlp_variants.append(("yt-dlp (cookies file)", cookies_file, None))
+        for browser in _browser_cookie_sources():
+            ytdlp_variants.append((f"yt-dlp (browser:{browser})", None, browser))
 
     for label, cf, browser in ytdlp_variants:
         log(f"Trying {label}...", "info")

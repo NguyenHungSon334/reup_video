@@ -5,8 +5,8 @@
   <key>CFBundleExecutable</key><string>ReupVideo-backend</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIdentifier</key><string>com.reupvideo.app</string>
-  <key>CFBundleName</key><string>Reup Video</string>
-  <key>CFBundleDisplayName</key><string>Reup Video</string>
+  <key>CFBundleName</key><string>Hồn Đá Reup</string>
+  <key>CFBundleDisplayName</key><string>Hồn Đá Reup</string>
   <key>CFBundleVersion</key><string>APP_VERSION_PLACEHOLDER</string>
   <key>CFBundleShortVersionString</key><string>APP_VERSION_PLACEHOLDER</string>
   <key>CFBundleIconFile</key><string>icon</string>
