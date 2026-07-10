@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../constants/colors.dart';
-import '../services/update_service.dart';
 
 class Sidebar extends StatelessWidget {
   final int navIdx;
@@ -55,7 +55,8 @@ class Sidebar extends StatelessWidget {
                         ),
                       ),
                       FutureBuilder<String>(
-                        future: UpdateService.currentVersion(),
+                        future: PackageInfo.fromPlatform()
+                            .then((i) => i.version),
                         builder: (context, snap) => Text(
                           'v${snap.data ?? ''}',
                           style: const TextStyle(
