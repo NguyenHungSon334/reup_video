@@ -43,11 +43,12 @@ _lark_cache: dict = {}
 _lark_cache_ts: float = 0.0
 _LARK_CACHE_TTL = 300.0  # 5 minutes
 
-# Max concurrent ffmpeg jobs. Config `max_concurrent_jobs` overrides; default
-# scales with cores (cores//2, min 2, cap 4). More jobs = more throughput but
-# more CPU/GPU contention — raise it if the machine can take it.
-import os as _os
-_DEFAULT_CONCURRENCY = max(2, min(4, (_os.cpu_count() or 2) // 2))
+# Max concurrent ffmpeg jobs. Default 1 — running >1 encode alongside the
+# Flutter GUI causes GPU contention (integrated GPU shared with ffmpeg's
+# qsv/amf encoder) that resets the driver and crashes the UI with
+# "EGL Error: Context Lost (12302)". Config `max_concurrent_jobs` overrides
+# if the machine has a dedicated GPU for encoding (e.g. nvenc on a separate card).
+_DEFAULT_CONCURRENCY = 1
 _cfg_conc = int(load_config().get("max_concurrent_jobs", 0) or _DEFAULT_CONCURRENCY)
 _ffmpeg_semaphore = threading.Semaphore(max(1, _cfg_conc))
 
@@ -109,6 +110,9 @@ def _download_drive_path(path: str, cfg: dict, tmp_dir: str, push) -> str | None
             suffix = ""
 
     target = Path(tmp_dir) / f"{file_id}{suffix}"
+    if target.is_file() and target.stat().st_size > 0:
+        push(f"✓ {target.name} already cached", "info")
+        return str(target)
     try:
         push(f"▶ Downloading Drive file {file_id}...", "info")
         download_gdrive_file(file_id, str(target), credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
@@ -122,12 +126,25 @@ def _download_drive_path(path: str, cfg: dict, tmp_dir: str, push) -> str | None
 _IMAGE_EXTS = {".png", ".webp", ".jpg", ".jpeg"}
 _VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}
 
+# Logo/banner are static per config — download once and reuse across every
+# video in the run instead of re-fetching from Drive each time (banner is a
+# video clip, so re-downloading it per job was the biggest per-video delay).
+_ASSET_CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache" / "assets"
+_ASSET_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_asset_path_cache: dict[str, str] = {}  # label -> resolved local path, for this process's lifetime
+
 
 def _pick_image_asset(label: str, folder_key: str, path_key: str,
                       body: dict, cfg: dict, tmp_dir: str, push,
                       exts: set[str] = _IMAGE_EXTS) -> str | None:
-    # Folder has priority — always pick from Drive folder if configured
     folder_id = cfg.get(folder_key, "").strip()
+    path = body.get(path_key, "").strip() or cfg.get(path_key, "").strip()
+    cache_key = f"{label}:{folder_id}:{path}"
+    cached = _asset_path_cache.get(cache_key)
+    if cached and Path(cached).is_file():
+        return cached
+
+    # Folder has priority — always pick from Drive folder if configured
     if folder_id:
         try:
             push(f"▶ Fetching {label} from Drive folder {folder_id}...", "info")
@@ -136,8 +153,9 @@ def _pick_image_asset(label: str, folder_key: str, path_key: str,
             if imgs:
                 chosen = imgs[0]  # folder has only 1 asset
                 push(f"▶ {label}: {chosen['name']}", "info")
-                downloaded = _download_drive_path(chosen["id"], cfg, tmp_dir, push)
+                downloaded = _download_drive_path(chosen["id"], cfg, str(_ASSET_CACHE_DIR), push)
                 if downloaded:
+                    _asset_path_cache[cache_key] = downloaded
                     return downloaded
                 push(f"⚠ {label} download failed", "warn")
             else:
@@ -146,17 +164,18 @@ def _pick_image_asset(label: str, folder_key: str, path_key: str,
             push(f"⚠ {label} folder error: {exc}", "warn")
 
     # Fallback: direct path (local file or Drive URL)
-    path = body.get(path_key, "").strip() or cfg.get(path_key, "").strip()
     if not path:
         push(f"⚠ {label} không được cấu hình ({folder_key} hoặc {path_key} cần được đặt)", "warn")
         return None
 
     file_path = Path(path)
     if file_path.is_file():
+        _asset_path_cache[cache_key] = str(file_path)
         return str(file_path)
 
-    downloaded = _download_drive_path(path, cfg, tmp_dir, push)
+    downloaded = _download_drive_path(path, cfg, str(_ASSET_CACHE_DIR), push)
     if downloaded:
+        _asset_path_cache[cache_key] = downloaded
         return downloaded
 
     push(f"⚠ {label} path không hợp lệ: {path}", "warn")

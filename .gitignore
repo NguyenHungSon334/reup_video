@@ -70,3 +70,6 @@ build/
 
 # Session cookies (secret)
 douyin.cookies.txt
+
+# Runtime asset cache (downloaded banner/logo, regenerated per machine)
+backend/.cache/
