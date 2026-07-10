@@ -326,6 +326,18 @@ class _BrowserWorker:
                 "(logged-in session).", "info")
         return ok
 
+    async def _is_gateway_error(self, page) -> bool:
+        """Douyin's edge sometimes returns a bare '504 Gateway Time-out' (or 502/
+        429) page instead of the video — a transient throttle, not a cookie/captcha
+        issue. Detect it by title so we can retry the nav rather than give up."""
+        try:
+            title = await page.title()
+        except Exception:
+            return False
+        t = title.lower()
+        return any(s in t for s in ("504 gateway", "502 bad gateway",
+                                    "gateway time-out", "429", "too many requests"))
+
     async def _is_captcha_page(self, page) -> bool:
         """Douyin serves a '验证码中间页' verify wall instead of the video when its
         anti-bot trips. Detect it by title/URL so we can hand it to the user."""
@@ -468,6 +480,18 @@ class _BrowserWorker:
 
         page = await open_and_nav()
         try:
+            # Gateway 504/502/429: Douyin edge throttled us and served an error
+            # page (0 requests, no video). Back off and re-navigate a few times —
+            # these clear on retry far more often than not.
+            for attempt in range(3):
+                if not await self._is_gateway_error(page):
+                    break
+                log(f"  Douyin edge returned gateway error — retrying "
+                    f"({attempt + 1}/3)...", "warn")
+                await page.close()
+                await asyncio.sleep(4 + attempt * 4)  # 4s, 8s, 12s backoff
+                page = await open_and_nav()
+
             # Captcha wall ('验证码中间页'): Douyin redirects to a verify page instead
             # of the video. Can't solve headless — relaunch a visible window, let the
             # user solve it, then re-navigate on the fresh (now-trusted) session.
@@ -665,6 +689,26 @@ def seed_cookies(log: Callable) -> None:
     worker = _worker
     worker._ensure_loop()
     asyncio.run_coroutine_threadsafe(worker._seed_visible(log), worker._loop).result(timeout=180)
+
+
+def ensure_cookies(log: Callable) -> bool:
+    """Auto-acquire Douyin cookies HEADLESS (no manual paste, no window).
+
+    Warming the shared browser runs a guest visit to douyin.com, which harvests
+    ttwid/__ac_nonce and saves them to the JSON store — enough to download PUBLIC
+    videos. Only returns False if even the guest handshake produced no cookies
+    (network down / hard block); then the caller can fall back to manual paste.
+    """
+    if load_cookie_header():
+        return True
+    log("Chưa có cookie — tự động lấy cookie khách (headless)...", "info")
+    _worker._ensure_loop()
+    try:
+        asyncio.run_coroutine_threadsafe(
+            _worker._ensure_browser(log), _worker._loop).result(timeout=120)
+    except Exception as e:
+        log(f"  Auto cookie failed: {e}", "warn")
+    return bool(load_cookie_header())
 
 
 def download_via_playwright(url: str, out_dir: str, log: Callable) -> str:

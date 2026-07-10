@@ -38,28 +38,54 @@ class _LogNotifier extends ChangeNotifier {
   final logs = <LogEntry>[];
   double progress = 0;
 
+  // Coalesce notifications: during processing many jobs stream progress at once.
+  // Rebuilding the log pane + auto-scroll on every single event floods the GPU
+  // (Context Lost on weak machines). Batch to at most ~7 rebuilds/sec instead.
+  Timer? _throttle;
+  static const _throttleMs = 140;
+  bool _disposed = false;
+
+  void _notifyThrottled() {
+    if (_disposed || _throttle != null) return;
+    _throttle = Timer(const Duration(milliseconds: _throttleMs), () {
+      _throttle = null;
+      if (!_disposed) notifyListeners();
+    });
+  }
+
   void add(LogEntry e) {
+    if (_disposed) return;
     logs.add(e);
     if (logs.length > _maxLogs) {
       logs.removeRange(0, logs.length - _maxLogs);
     }
-    notifyListeners();
+    _notifyThrottled();
   }
 
   void incrProgress() {
+    if (_disposed) return;
     progress = (progress + 0.01).clamp(0.0, 0.95);
-    notifyListeners();
+    _notifyThrottled();
   }
 
   void reset() {
+    if (_disposed) return;
     progress = 0;
     notifyListeners();
   }
 
   void clear() {
+    if (_disposed) return;
     logs.clear();
     progress = 0;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _throttle?.cancel();
+    super.dispose();
   }
 }
 
@@ -82,6 +108,10 @@ class _DataScreenState extends State<DataScreen> {
   String? _kenhFilter;
   bool _processing = false;
 
+  // Client-side pagination
+  static const int _pageSize = 50;
+  int _page = 0;
+
   // Phase 2: ValueNotifier — selection changes never trigger table rebuild
   final _selectionNotifier = ValueNotifier<Set<String>>({});
   Set<String> get _selectedIds => _selectionNotifier.value;
@@ -90,6 +120,7 @@ class _DataScreenState extends State<DataScreen> {
   final _searchCtrl   = TextEditingController();
   final _logoEnabled  = <String, bool>{};
   final _musicEnabled = <String, bool>{};
+  final _bannerEnabled = <String, bool>{};
   final _rowStates    = <String, _RowState>{};
   // Per-row progress notifiers: streaming updates rebuild only the one row's
   // progress cell, never the whole screen (prevents GPU-context-lost freezes).
@@ -151,6 +182,7 @@ class _DataScreenState extends State<DataScreen> {
               final id = r['_record_id'] ?? '';
               if (id.isEmpty) continue;
               _logoEnabled[id] = true;
+              _bannerEnabled[id] = true;
               _musicEnabled[id] = (r['Nhạc'] ?? '').toLowerCase() == 'yes';
             }
             setState(() {
@@ -193,30 +225,28 @@ class _DataScreenState extends State<DataScreen> {
       final data = await widget.api.getLarkData(refresh: refresh);
       if (!mounted) return;
       _logoEnabled.clear();
+      _bannerEnabled.clear();
       _musicEnabled.clear();
       for (final row in data.records) {
         final id = row['_record_id'] ?? '';
         if (id.isEmpty) continue;
         _logoEnabled[id] = true;
+        _bannerEnabled[id] = true;
         _musicEnabled[id] = (row['Nhạc'] ?? '').toLowerCase() == 'yes';
       }
-      final reversed = LarkData(
-        fields: data.fields,
-        records: data.records.reversed.toList(),
-        total: data.total,
-      );
+      // Backend already sorts newest-created first.
       setState(() {
-        _data = reversed;
+        _data = data;
         _filteredCache = null;
         _colWidths = null; // Phase 1: invalidate on new data
         if (_visibleFields == null) {
-          final allFields = reversed.fields.where((f) => f != 'Nhạc').toSet();
+          final allFields = data.fields.where((f) => f != 'Nhạc').toSet();
           _visibleFields = allFields.where((f) =>
-              reversed.records.any((r) => (r[f] ?? '').isNotEmpty)).toSet();
+              data.records.any((r) => (r[f] ?? '').isNotEmpty)).toSet();
         }
         // Drop finished row states for records no longer in the loaded set
         if (_rowStates.isNotEmpty) {
-          final liveIds = reversed.records.map((r) => r['_record_id'] ?? '').toSet();
+          final liveIds = data.records.map((r) => r['_record_id'] ?? '').toSet();
           _rowStates.removeWhere((id, state) {
             final drop = state.progress >= 1.0 && !liveIds.contains(id);
             if (drop) _rowNotifiers.remove(id)?.dispose();
@@ -224,14 +254,14 @@ class _DataScreenState extends State<DataScreen> {
           });
         }
         if (_statusFilter != null) {
-          final existing = reversed.records
+          final existing = data.records
               .map((r) => r['Status'] ?? '')
               .where((s) => s.isNotEmpty)
               .toSet();
           if (!existing.contains(_statusFilter)) _statusFilter = null;
         }
         if (_kenhFilter != null) {
-          final existing = reversed.records
+          final existing = data.records
               .map((r) => r['Kênh'] ?? '')
               .where((s) => s.isNotEmpty)
               .toSet();
@@ -441,7 +471,8 @@ class _DataScreenState extends State<DataScreen> {
 
     // Cap concurrency: backend already throttles ffmpeg/Playwright, and N
     // simultaneous job streams flood the UI with progress events → freezes.
-    const maxConcurrent = 4;
+    // Kept low (2) so weak machines don't lose the GPU context under the flood.
+    const maxConcurrent = 2;
     for (var i = 0; i < toProcess.length; i += maxConcurrent) {
       final batch = toProcess.skip(i).take(maxConcurrent);
       await Future.wait(batch.map((row) => _processRow(row, cfg)));
@@ -458,8 +489,9 @@ class _DataScreenState extends State<DataScreen> {
   Future<void> _processRow(Map<String, String> row, Map<String, dynamic> cfg) async {
     final recordId = row['_record_id'] ?? '';
     final url = row['Link video Douyin'] ?? '';
-    final useLogo  = _logoEnabled[recordId] ?? true;
-    final useMusic = _musicEnabled[recordId] ?? false;
+    final useLogo   = _logoEnabled[recordId] ?? true;
+    final useBanner = _bannerEnabled[recordId] ?? true;
+    final useMusic  = _musicEnabled[recordId] ?? false;
 
     if (url.isEmpty) {
       _addLog('⚠ ${recordId.substring(0, 6)}: không có URL, bỏ qua', LogType.warn);
@@ -474,6 +506,7 @@ class _DataScreenState extends State<DataScreen> {
         'url': url,
         'record_id': recordId,
         'use_logo': useLogo,
+        'use_banner': useBanner,
         'use_music': useMusic,
         'logo_path': cfg['logo_path'] ?? '',
         'music_path': cfg['music_path'] ?? '',
@@ -485,6 +518,10 @@ class _DataScreenState extends State<DataScreen> {
 
       final ch = widget.api.connectJobLogs(jobId);
       await for (final raw in ch.stream) {
+        if (!mounted) {
+          await ch.sink.close();
+          break;
+        }
         final msg  = jsonDecode(raw as String) as Map<String, dynamic>;
         final type = msg['type'] as String? ?? 'info';
         final text = msg['message'] as String? ?? '';
@@ -512,6 +549,16 @@ class _DataScreenState extends State<DataScreen> {
 
         if (type == 'error') {
           _setRowState(recordId, _RowState('✗ $text', 1.0, isError: true));
+        } else if (text.contains('Xử lý video:')) {
+          // Real ffmpeg percent → map into the processing band 0.55–0.80.
+          final m = RegExp(r'(\d+)%').firstMatch(text);
+          final pct = (int.tryParse(m?.group(1) ?? '0') ?? 0) / 100.0;
+          // Show "frame X/Y" in the row label when ffmpeg reported it.
+          final fm = RegExp(r'frame \d+(?:/\d+)?').firstMatch(text);
+          final label = fm != null
+              ? 'Xử lý ${m?.group(1) ?? '0'}% · ${fm.group(0)}'
+              : 'Đang xử lý ${m?.group(1) ?? '0'}%';
+          _setRowState(recordId, _RowState(label, 0.55 + pct * 0.25));
         } else if (text.contains('Đang tải') || text.contains('Connecting') || text.contains('Downloading')) {
           _setRowState(recordId, const _RowState('Đang tải...', 0.20));
         } else if (text.contains('♪') || text.contains('Music')) {
@@ -528,7 +575,7 @@ class _DataScreenState extends State<DataScreen> {
                 _RowState('Đang tải lên ${pctMatch.group(1)}%', 0.80 + pct * 0.18));
           }
         }
-        _logNotifier.incrProgress();
+        if (mounted) _logNotifier.incrProgress();
       }
     } on Exception catch (e) {
       final msg = e.toString().replaceFirst('Exception: ', '');
@@ -674,7 +721,7 @@ class _DataScreenState extends State<DataScreen> {
                 width: 220,
                 child: TextField(
                   controller: _searchCtrl,
-                  onChanged: (v) => setState(() { _search = v; _filteredCache = null; }),
+                  onChanged: (v) => setState(() { _search = v; _filteredCache = null; _page = 0; }),
                   style: const TextStyle(color: kText, fontSize: 12.5),
                   decoration: InputDecoration(
                     hintText: 'Tìm kiếm...',
@@ -729,7 +776,7 @@ class _DataScreenState extends State<DataScreen> {
                                   child: Text(s, style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis),
                                 )),
                           ],
-                          onChanged: (v) => setState(() { _statusFilter = v; _filteredCache = null; }),
+                          onChanged: (v) => setState(() { _statusFilter = v; _filteredCache = null; _page = 0; }),
                         ),
                       ),
                     ),
@@ -767,7 +814,7 @@ class _DataScreenState extends State<DataScreen> {
                                   child: Text(s, style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis),
                                 )),
                           ],
-                          onChanged: (v) => setState(() { _kenhFilter = v; _filteredCache = null; }),
+                          onChanged: (v) => setState(() { _kenhFilter = v; _filteredCache = null; _page = 0; }),
                         ),
                       ),
                     ),
@@ -887,6 +934,7 @@ class _DataScreenState extends State<DataScreen> {
           child: Column(
             children: [
               Expanded(child: RepaintBoundary(child: _buildBody())),
+              _buildPager(),
               ListenableBuilder(
                 listenable: _logNotifier,
                 builder: (_, __) => _LogPane(
@@ -904,6 +952,52 @@ class _DataScreenState extends State<DataScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ── Pager ─────────────────────────────────────────────────────────────────────
+
+  Widget _buildPager() {
+    if (_data == null) return const SizedBox.shrink();
+    final total = _filtered.length;
+    if (total <= _pageSize) return const SizedBox.shrink();
+    final pageCount = (total + _pageSize - 1) ~/ _pageSize;
+    final page = _page.clamp(0, pageCount - 1);
+    final from = page * _pageSize + 1;
+    final to = ((page + 1) * _pageSize).clamp(0, total);
+
+    Widget navBtn(IconData icon, bool enabled, VoidCallback onTap) => IconButton(
+          onPressed: enabled ? onTap : null,
+          icon: Icon(icon, size: 18),
+          color: kTextDim,
+          disabledColor: kBorder,
+          visualDensity: VisualDensity.compact,
+          splashRadius: 18,
+        );
+
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: const BoxDecoration(
+        color: kSidebar,
+        border: Border(top: BorderSide(color: kBorder)),
+      ),
+      child: Row(
+        children: [
+          Text('$from–$to / $total',
+              style: const TextStyle(color: kTextDim, fontSize: 12)),
+          const Spacer(),
+          navBtn(Icons.first_page_rounded, page > 0, () => setState(() => _page = 0)),
+          navBtn(Icons.chevron_left_rounded, page > 0, () => setState(() => _page = page - 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text('Trang ${page + 1}/$pageCount',
+                style: const TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+          navBtn(Icons.chevron_right_rounded, page < pageCount - 1, () => setState(() => _page = page + 1)),
+          navBtn(Icons.last_page_rounded, page < pageCount - 1, () => setState(() => _page = pageCount - 1)),
+        ],
+      ),
     );
   }
 
@@ -960,7 +1054,13 @@ class _DataScreenState extends State<DataScreen> {
           child: Text('Không có dữ liệu', style: TextStyle(color: kTextDim, fontSize: 13)));
     }
 
-    final rows       = _filtered;
+    final allRows    = _filtered;
+    final total      = allRows.length;
+    final pageCount  = total == 0 ? 1 : ((total + _pageSize - 1) ~/ _pageSize);
+    final page       = _page.clamp(0, pageCount - 1);
+    final start      = page * _pageSize;
+    final end        = (start + _pageSize) > total ? total : start + _pageSize;
+    final rows       = total == 0 ? const <Map<String, String>>[] : allRows.sublist(start, end);
     final colWidths  = _colWidthsMap;
     final visible    = _visibleFields;
     final dataFields = _data!.fields
@@ -969,9 +1069,9 @@ class _DataScreenState extends State<DataScreen> {
     final hasProgress = _rowStates.isNotEmpty;
 
     // Total horizontal width (Phase 1: fixed, no measure)
-    // Dividers: 3 between fixed cols + 1 for progress + 1 per data field
-    final divCount = 3 + (hasProgress ? 1 : 0) + dataFields.length;
-    double totalW = _kColCheck + _kColIndex + _kColToggle + _kColToggle + divCount;
+    // Dividers: 4 between fixed cols + 1 for progress + 1 per data field
+    final divCount = 4 + (hasProgress ? 1 : 0) + dataFields.length;
+    double totalW = _kColCheck + _kColIndex + _kColToggle * 3 + divCount;
     if (hasProgress) totalW += _kColProgress;
     for (final f in dataFields) totalW += colWidths[f] ?? _kColMin;
 
@@ -1061,10 +1161,13 @@ class _DataScreenState extends State<DataScreen> {
                   itemBuilder: (_, i) {
                     final row = rows[i];
                     final id  = row['_record_id'] ?? '';
+                    // Descending numbering: largest at top (start of list)
+                    final displayNumber = total - (start + i);
                     return ValueListenableBuilder<Set<String>>(
                       valueListenable: _selectionNotifier,
                       builder: (_, selected, __) => _TableRow(
                         index: i,
+                        displayNumber: displayNumber,
                         row: row,
                         dataFields: dataFields,
                         colWidths: colWidths,
@@ -1072,9 +1175,11 @@ class _DataScreenState extends State<DataScreen> {
                         rowStateListenable: _rowNotifiers[id],
                         isSelected: selected.contains(id),
                         logoEnabled: _logoEnabled[id] ?? true,
+                        bannerEnabled: _bannerEnabled[id] ?? true,
                         musicEnabled: _musicEnabled[id] ?? false,
                         onToggle: () => _toggleRow(id),
                         onLogoToggle: (v) => setState(() => _logoEnabled[id] = v),
+                        onBannerToggle: (v) => setState(() => _bannerEnabled[id] = v),
                         onMusicToggle: (v) => setState(() => _musicEnabled[id] = v),
                       ),
                     );
@@ -1123,6 +1228,8 @@ class _TableHeader extends StatelessWidget {
         _div,
         _cell(_kColToggle, const _HeaderCell('LOGO')),
         _div,
+        _cell(_kColToggle, const _HeaderCell('BANNER')),
+        _div,
         _cell(_kColToggle, const _HeaderCell('NHẠC')),
         if (hasProgress) ...[_div, _cell(_kColProgress, const _HeaderCell('TIẾN ĐỘ'))],
         ...dataFields.map((f) => Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1141,6 +1248,7 @@ class _TableHeader extends StatelessWidget {
 
 class _TableRow extends StatefulWidget {
   final int index;
+  final int displayNumber;
   final Map<String, String> row;
   final List<String> dataFields;
   final Map<String, double> colWidths;
@@ -1148,22 +1256,27 @@ class _TableRow extends StatefulWidget {
   final ValueListenable<_RowState?>? rowStateListenable;
   final bool isSelected;
   final bool logoEnabled;
+  final bool bannerEnabled;
   final bool musicEnabled;
   final VoidCallback onToggle;
   final ValueChanged<bool> onLogoToggle;
+  final ValueChanged<bool> onBannerToggle;
   final ValueChanged<bool> onMusicToggle;
 
   const _TableRow({
     required this.index,
+    required this.displayNumber,
     required this.row,
     required this.dataFields,
     required this.colWidths,
     required this.hasProgress,
     required this.isSelected,
     required this.logoEnabled,
+    required this.bannerEnabled,
     required this.musicEnabled,
     required this.onToggle,
     required this.onLogoToggle,
+    required this.onBannerToggle,
     required this.onMusicToggle,
     this.rowStateListenable,
   });
@@ -1200,9 +1313,11 @@ class _TableRowState extends State<_TableRow> {
           child: Row(children: [
             _cell(_kColCheck, _CheckCell(value: widget.isSelected, onChanged: (_) => widget.onToggle())),
             _div,
-            _cell(_kColIndex, _IndexCell(widget.index + 1)),
+            _cell(_kColIndex, _IndexCell(widget.displayNumber)),
             _div,
             _cell(_kColToggle, _ToggleCell(value: widget.logoEnabled, onChanged: widget.onLogoToggle, icon: Icons.image_rounded, activeColor: kAccent)),
+            _div,
+            _cell(_kColToggle, _ToggleCell(value: widget.bannerEnabled, onChanged: widget.onBannerToggle, icon: Icons.view_carousel_rounded, activeColor: const Color(0xFF0EA5E9))),
             _div,
             _cell(_kColToggle, _ToggleCell(value: widget.musicEnabled, onChanged: widget.onMusicToggle, icon: Icons.music_note_rounded, activeColor: const Color(0xFF7C3AED))),
             if (widget.hasProgress) ...[
@@ -1509,11 +1624,8 @@ class _LogPaneState extends State<_LogPane> {
     if (widget.logs.length != old.logs.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollCtrl.hasClients) {
-          _scrollCtrl.animateTo(
-            _scrollCtrl.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOut,
-          );
+          // jumpTo (no per-frame animation) — cheaper on GPU during log floods.
+          _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
         }
       });
     }

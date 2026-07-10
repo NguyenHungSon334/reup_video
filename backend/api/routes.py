@@ -43,10 +43,13 @@ _lark_cache: dict = {}
 _lark_cache_ts: float = 0.0
 _LARK_CACHE_TTL = 300.0  # 5 minutes
 
-# Max concurrent ffmpeg jobs. 2 on quad-core+ for throughput; 1 on smaller
-# machines to keep peak RAM/CPU sane (ffmpeg already multithreads internally).
+# Max concurrent ffmpeg jobs. Config `max_concurrent_jobs` overrides; default
+# scales with cores (cores//2, min 2, cap 4). More jobs = more throughput but
+# more CPU/GPU contention — raise it if the machine can take it.
 import os as _os
-_ffmpeg_semaphore = threading.Semaphore(2 if (_os.cpu_count() or 1) >= 4 else 1)
+_DEFAULT_CONCURRENCY = max(2, min(4, (_os.cpu_count() or 2) // 2))
+_cfg_conc = int(load_config().get("max_concurrent_jobs", 0) or _DEFAULT_CONCURRENCY)
+_ffmpeg_semaphore = threading.Semaphore(max(1, _cfg_conc))
 
 # Real-time data-event subscribers
 _data_subscribers: set[WebSocket] = set()
@@ -116,30 +119,36 @@ def _download_drive_path(path: str, cfg: dict, tmp_dir: str, push) -> str | None
         return None
 
 
-def _pick_logo(body: dict, cfg: dict, tmp_dir: str, push) -> str | None:
+_IMAGE_EXTS = {".png", ".webp", ".jpg", ".jpeg"}
+_VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}
+
+
+def _pick_image_asset(label: str, folder_key: str, path_key: str,
+                      body: dict, cfg: dict, tmp_dir: str, push,
+                      exts: set[str] = _IMAGE_EXTS) -> str | None:
     # Folder has priority — always pick from Drive folder if configured
-    folder_id = cfg.get("logo_gdrive_folder_id", "").strip()
+    folder_id = cfg.get(folder_key, "").strip()
     if folder_id:
         try:
-            push(f"▶ Fetching logo from Drive folder {folder_id}...", "info")
+            push(f"▶ Fetching {label} from Drive folder {folder_id}...", "info")
             files = list_folder_files(folder_id, credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
-            logos = [f for f in files if Path(f.get("name", "")).suffix.lower() in {".png", ".webp", ".jpg", ".jpeg"}]
-            if logos:
-                chosen = logos[0]  # folder has only 1 logo
-                push(f"▶ Logo: {chosen['name']}", "info")
+            imgs = [f for f in files if Path(f.get("name", "")).suffix.lower() in exts]
+            if imgs:
+                chosen = imgs[0]  # folder has only 1 asset
+                push(f"▶ {label}: {chosen['name']}", "info")
                 downloaded = _download_drive_path(chosen["id"], cfg, tmp_dir, push)
                 if downloaded:
                     return downloaded
-                push("⚠ Logo download failed", "warn")
+                push(f"⚠ {label} download failed", "warn")
             else:
-                push(f"⚠ No image files in logo folder {folder_id}", "warn")
+                push(f"⚠ No matching files in {label} folder {folder_id}", "warn")
         except Exception as exc:
-            push(f"⚠ Logo folder error: {exc}", "warn")
+            push(f"⚠ {label} folder error: {exc}", "warn")
 
     # Fallback: direct path (local file or Drive URL)
-    path = body.get("logo_path", "").strip() or cfg.get("logo_path", "").strip()
+    path = body.get(path_key, "").strip() or cfg.get(path_key, "").strip()
     if not path:
-        push("⚠ Logo không được cấu hình (logo_gdrive_folder_id hoặc logo_path cần được đặt)", "warn")
+        push(f"⚠ {label} không được cấu hình ({folder_key} hoặc {path_key} cần được đặt)", "warn")
         return None
 
     file_path = Path(path)
@@ -150,8 +159,18 @@ def _pick_logo(body: dict, cfg: dict, tmp_dir: str, push) -> str | None:
     if downloaded:
         return downloaded
 
-    push(f"⚠ Logo path không hợp lệ: {path}", "warn")
+    push(f"⚠ {label} path không hợp lệ: {path}", "warn")
     return None
+
+
+def _pick_logo(body: dict, cfg: dict, tmp_dir: str, push) -> str | None:
+    return _pick_image_asset("Logo", "logo_gdrive_folder_id", "logo_path", body, cfg, tmp_dir, push)
+
+
+def _pick_banner(body: dict, cfg: dict, tmp_dir: str, push) -> str | None:
+    # Banner is a video clip overlaid on the reup video.
+    return _pick_image_asset("Banner", "banner_gdrive_folder_id", "banner_path",
+                             body, cfg, tmp_dir, push, exts=_VIDEO_EXTS)
 
 
 def _pick_music(body: dict, cfg: dict, tmp_dir: str, push) -> tuple[str | None, str | None]:
@@ -217,6 +236,20 @@ async def get_config():
 async def set_config(body: dict):
     save_config(body)
     return {"ok": True}
+
+
+@router.get("/media/dims")
+async def media_dims(path: str):
+    """Probe a local video/image file's actual pixel width/height (for the
+    banner scale preview in Settings — needs the real source dims, not a
+    guess)."""
+    from backend.services.processor import probe_dims
+    if not _os.path.isfile(path):
+        return {"ok": False, "error": "File không tồn tại trên máy này."}
+    dims = probe_dims(path)
+    if not dims:
+        return {"ok": False, "error": "Không đọc được kích thước file."}
+    return {"ok": True, "width": dims[0], "height": dims[1]}
 
 
 @router.get("/gdrive/status")
@@ -558,9 +591,11 @@ async def start_job(body: dict):
                 cookies_file=cfg.get("cookies_file", "").strip() or None,
             )
 
-            use_logo  = body.get("use_logo", False)
-            use_music = body.get("use_music", False)
+            use_logo   = body.get("use_logo", False)
+            use_music  = body.get("use_music", False)
+            use_banner = body.get("use_banner", cfg.get("use_banner", False))
             logo      = _pick_logo(body, cfg, tmp, push) if use_logo else None
+            banner    = _pick_banner(body, cfg, tmp, push) if use_banner else None
             music, music_name = _pick_music(body, cfg, tmp, push) if use_music else (None, None)
 
             if music_name:
@@ -568,19 +603,22 @@ async def start_job(body: dict):
 
             lark_update({"status": "Đang xử lý..."})
 
-            if use_logo or use_music:
+            if use_logo or use_music or use_banner:
                 out = str(Path(tmp) / "output.mp4")
                 logo_scale    = int(cfg.get("logo_scale", 150))
                 logo_position = cfg.get("logo_position", "top_left")
                 logo_opacity  = float(cfg.get("logo_opacity", 1.0))
+                max_height    = int(cfg.get("max_height", 720))
+                banner_scale_pct = float(cfg.get("banner_scale_pct", 100.0))
                 push("⏳ Chờ slot xử lý...", "info")
                 with _ffmpeg_semaphore:
-                    process_video(video, out, push, logo=logo, music=music,
+                    process_video(video, out, push, logo=logo, music=music, banner=banner,
                                   logo_scale=logo_scale, logo_position=logo_position,
-                                  logo_opacity=logo_opacity)
+                                  logo_opacity=logo_opacity, max_height=max_height,
+                                  banner_scale_pct=banner_scale_pct)
             else:
                 out = video
-                push("⊘ No processing (logo + music both off)", "info")
+                push("⊘ No processing (logo + banner + music all off)", "info")
 
             mode = body.get("save_to", "drive")
             if mode == "local":

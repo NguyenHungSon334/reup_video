@@ -3,6 +3,7 @@ import json
 import mimetypes
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -96,11 +97,14 @@ except ImportError:
 _DRIVE_FILE_ID_PATTERN = re.compile(r"/d/([\w-]+)|[\?&]id=([\w-]+)")
 
 
-# Cache built Drive services by credentials path. The underlying google client
-# auto-refreshes the access token on use, so one service survives a whole batch.
+# Cache built Drive services PER THREAD. A googleapiclient service wraps a single
+# httplib2.Http/auth session that is NOT thread-safe — sharing one across worker
+# threads makes concurrent .execute() calls collide on the same TLS socket
+# ("SSL: MIXED_HANDSHAKE_AND_NON_HANDSHAKE_DATA" / "UNEXPECTED_RECORD"). Thread-local
+# gives each worker its own service+socket; still cached so one survives a batch.
 # ponytail: never invalidated; a revoked token surfaces as an API error and the
 # user re-auths (deletes token.json) — add explicit eviction only if that hurts.
-_service_cache: dict[str, object] = {}
+_service_cache = threading.local()
 
 
 def _gdrive_service(credentials_path: str | None = None):
@@ -111,7 +115,10 @@ def _gdrive_service(credentials_path: str | None = None):
         )
 
     cache_key = credentials_path or "__default__"
-    cached = _service_cache.get(cache_key)
+    cache = getattr(_service_cache, "services", None)
+    if cache is None:
+        cache = _service_cache.services = {}
+    cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
@@ -139,7 +146,7 @@ def _gdrive_service(credentials_path: str | None = None):
             f.write(creds.to_json())
 
     svc = build("drive", "v3", credentials=creds)
-    _service_cache[cache_key] = svc
+    cache[cache_key] = svc
     return svc
 
 

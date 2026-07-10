@@ -89,11 +89,25 @@ async def fetch_lark_data(app_id: str, app_secret: str) -> dict:
                     for name in field_names
                 }
                 row["_record_id"] = item.get("record_id", "")
+                # created_time = epoch ms from Lark; kept for sorting only.
+                row["_created_time"] = int(item.get("created_time") or 0)
                 all_records.append(row)
 
             if not r_data_block.get("has_more", False):
                 break
             page_token = r_data_block.get("page_token")
+
+    # Newest created first. Tie-break on insertion order (Lark returns oldest→newest)
+    # so that when created_time is missing/equal the last-inserted row still wins.
+    all_records = [
+        r for _, r in sorted(
+            enumerate(all_records),
+            key=lambda t: (t[1].get("_created_time", 0), t[0]),
+            reverse=True,
+        )
+    ]
+    for r in all_records:
+        r.pop("_created_time", None)
 
     return {
         "fields": field_names,

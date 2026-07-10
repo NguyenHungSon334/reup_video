@@ -30,12 +30,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _musicDriveCtrl = TextEditingController();
   final _logoPathCtrl = TextEditingController();
   final _logoDriveCtrl = TextEditingController();
+  final _bannerDriveCtrl = TextEditingController();
   final _appIdCtrl = TextEditingController();
   final _appSecretCtrl = TextEditingController();
   int _destTab = 0;
   int _logoScale = 150;
   String _logoPosition = 'top_left';
   double _logoOpacity = 1.0;
+  double _bannerScalePct = 100.0;
   bool _obscureSecret = true;
   bool _saving = false;
   String? _message;
@@ -59,6 +61,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _musicDriveCtrl.dispose();
     _logoPathCtrl.dispose();
     _logoDriveCtrl.dispose();
+    _bannerDriveCtrl.dispose();
     _appIdCtrl.dispose();
     _appSecretCtrl.dispose();
     super.dispose();
@@ -77,12 +80,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _musicDriveCtrl.text = cfg['music_gdrive_folder_id'] as String? ?? '';
         _logoPathCtrl.text = cfg['logo_path'] as String? ?? '';
         _logoDriveCtrl.text = cfg['logo_gdrive_folder_id'] as String? ?? '';
+        _bannerDriveCtrl.text = cfg['banner_gdrive_folder_id'] as String? ?? '';
         _appIdCtrl.text = cfg['lark_app_id'] as String? ?? '';
         _appSecretCtrl.text = cfg['lark_app_secret'] as String? ?? '';
         _destTab = (cfg['save_to'] as String? ?? 'drive') == 'local' ? 1 : 0;
         _logoScale = (cfg['logo_scale'] as num?)?.toInt() ?? 150;
         _logoPosition = cfg['logo_position'] as String? ?? 'top_left';
         _logoOpacity = (cfg['logo_opacity'] as num?)?.toDouble() ?? 1.0;
+        _bannerScalePct =
+            (cfg['banner_scale_pct'] as num?)?.toDouble() ?? 100.0;
       });
     } on Exception {
       _showMsg('Không kết nối được backend', isError: true);
@@ -119,6 +125,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'logo_scale': _logoScale,
         'logo_position': _logoPosition,
         'logo_opacity': _logoOpacity,
+        'banner_scale_pct': _bannerScalePct,
       });
       _showMsg('✓ Đã lưu cài đặt');
     } on Exception catch (e) {
@@ -218,13 +225,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   musicDriveCtrl: _musicDriveCtrl,
                   logoPathCtrl: _logoPathCtrl,
                   logoDriveCtrl: _logoDriveCtrl,
+                  bannerDriveCtrl: _bannerDriveCtrl,
                   api: widget.api,
                   logoScale: _logoScale,
                   logoPosition: _logoPosition,
                   logoOpacity: _logoOpacity,
+                  bannerScalePct: _bannerScalePct,
                   onScaleChanged: (v) => setState(() => _logoScale = v),
                   onPositionChanged: (v) => setState(() => _logoPosition = v),
                   onOpacityChanged: (v) => setState(() => _logoOpacity = v),
+                  onBannerScalePctChanged: (v) =>
+                      setState(() => _bannerScalePct = v),
                 ),
                 const SizedBox(height: 16),
                 _LarkSection(
@@ -615,30 +626,36 @@ class _MediaSection extends StatelessWidget {
   final TextEditingController musicDriveCtrl;
   final TextEditingController logoPathCtrl;
   final TextEditingController logoDriveCtrl;
+  final TextEditingController bannerDriveCtrl;
   final ApiService api;
   final int logoScale;
   final String logoPosition;
   final double logoOpacity;
+  final double bannerScalePct;
   final ValueChanged<int> onScaleChanged;
   final ValueChanged<String> onPositionChanged;
   final ValueChanged<double> onOpacityChanged;
+  final ValueChanged<double> onBannerScalePctChanged;
 
   const _MediaSection({
     required this.musicFolderCtrl,
     required this.musicDriveCtrl,
     required this.logoPathCtrl,
     required this.logoDriveCtrl,
+    required this.bannerDriveCtrl,
     required this.api,
     required this.logoScale,
     required this.logoPosition,
     required this.logoOpacity,
+    required this.bannerScalePct,
     required this.onScaleChanged,
     required this.onPositionChanged,
     required this.onOpacityChanged,
+    required this.onBannerScalePctChanged,
   });
 
   Future<void> _showFilesList(BuildContext context, String folderId,
-      {bool isLogo = false}) async {
+      {bool isLogo = false, String? title}) async {
     if (!context.mounted) return;
     showDialog(
       context: context,
@@ -673,7 +690,7 @@ class _MediaSection extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  isLogo ? 'Logo Folder' : 'Music Folder',
+                  title ?? (isLogo ? 'Logo Folder' : 'Music Folder'),
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kText),
                 ),
               ),
@@ -879,6 +896,109 @@ class _MediaSection extends StatelessWidget {
                 child: const Text('Upload', style: TextStyle(fontSize: 12)),
               ),
             ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // ── Banner ───────────────────────────────────────────────────────────
+          const Text('Banner (dưới video)',
+              style: TextStyle(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
+          const SizedBox(height: 4),
+          const Text('Video banner (MP4/MOV) dán full chiều rộng, đè lên đáy video reup (tự lặp).',
+              style: TextStyle(color: kTextDim, fontSize: 10.5)),
+          const SizedBox(height: 8),
+          const Text('Drive Banner Folder ID',
+              style: TextStyle(
+                  color: kMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9)),
+          const SizedBox(height: 3),
+          const Text('Set via env: BANNER_GDRIVE_FOLDER_ID',
+              style: TextStyle(color: kTextDim, fontSize: 10.5)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                  child: DarkInput(
+                      ctrl: bannerDriveCtrl,
+                      hint: 'BANNER_GDRIVE_FOLDER_ID',
+                      readOnly: true)),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  final id = bannerDriveCtrl.text.trim();
+                  if (id.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Please enter folder ID')));
+                    return;
+                  }
+                  await _showFilesList(context, id, title: 'Banner Folder');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kAccent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
+                  elevation: 0,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('List', style: TextStyle(fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  final id = bannerDriveCtrl.text.trim();
+                  if (id.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Enter folder ID')));
+                    return;
+                  }
+                  final res = await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: ['mp4', 'mov', 'webm', 'mkv', 'm4v']);
+                  if (res?.files.single != null) {
+                    final file = res!.files.single;
+                    try {
+                      await api.gdriveUpload(file, id);
+                      if (context.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Uploaded: ${file.name}')));
+                    } catch (e) {
+                      if (context.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Upload error: $e')));
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kAccent,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5)),
+                  elevation: 0,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Upload', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+          _BannerPreview(
+            api: api,
+            scalePct: bannerScalePct,
+            onScalePctChanged: onBannerScalePctChanged,
           ),
 
           const SizedBox(height: 14),
@@ -1140,6 +1260,381 @@ class _MediaSection extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Banner scale preview (demo) ────────────────────────────────────────────
+//
+// Mirrors the ffmpeg scale2ref formula in processor.py exactly:
+//   w = main_w (full output width)
+//   h = main_w * bannerH / bannerW  (banner's own aspect ratio, no stretch)
+// Output frame dims default to the pipeline's actual current size
+// (max_height=720 -> 9:16 width ~406, see backend/api/routes.py default).
+
+class _BannerPreview extends StatefulWidget {
+  final ApiService api;
+  final double scalePct;
+  final ValueChanged<double> onScalePctChanged;
+  const _BannerPreview({
+    required this.api,
+    required this.scalePct,
+    required this.onScalePctChanged,
+  });
+
+  @override
+  State<_BannerPreview> createState() => _BannerPreviewState();
+}
+
+class _BannerPreviewState extends State<_BannerPreview> {
+  // Fallback until "Lấy kích thước" probes the real reup video file.
+  static const int _fallbackOutW = 406;
+  static const int _fallbackOutH = 720;
+
+  final _reupPathCtrl = TextEditingController();
+  final _reupWCtrl = TextEditingController(text: '$_fallbackOutW');
+  final _reupHCtrl = TextEditingController(text: '$_fallbackOutH');
+  final _bannerPathCtrl = TextEditingController();
+  final _bannerWCtrl = TextEditingController(text: '1920');
+  final _bannerHCtrl = TextEditingController(text: '300');
+  late final _scaleCtrl =
+      TextEditingController(text: _fmtPct(widget.scalePct));
+  final _labelCtrl = TextEditingController(text: 'Hồn Đá');
+  bool _probingReup = false;
+  bool _probingBanner = false;
+  String? _probeError;
+
+  static String _fmtPct(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
+
+  @override
+  void didUpdateWidget(covariant _BannerPreview old) {
+    super.didUpdateWidget(old);
+    // Keep the field in sync if the value was reset elsewhere (e.g. reload).
+    if (old.scalePct != widget.scalePct &&
+        double.tryParse(_scaleCtrl.text) != widget.scalePct) {
+      _scaleCtrl.text = _fmtPct(widget.scalePct);
+    }
+  }
+
+  @override
+  void dispose() {
+    _reupPathCtrl.dispose();
+    _reupWCtrl.dispose();
+    _reupHCtrl.dispose();
+    _bannerPathCtrl.dispose();
+    _bannerWCtrl.dispose();
+    _bannerHCtrl.dispose();
+    _scaleCtrl.dispose();
+    _labelCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickAndProbe({required bool isBanner}) async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['mp4', 'mov', 'webm', 'mkv', 'm4v'],
+    );
+    final path = res?.files.single.path;
+    if (path == null) return;
+    (isBanner ? _bannerPathCtrl : _reupPathCtrl).text = path;
+    setState(() {
+      if (isBanner) {
+        _probingBanner = true;
+      } else {
+        _probingReup = true;
+      }
+      _probeError = null;
+    });
+    try {
+      final body = await widget.api.probeMediaDims(path);
+      if (!mounted) return;
+      if (body['ok'] == true) {
+        final w = (body['width'] as num).toInt();
+        final h = (body['height'] as num).toInt();
+        setState(() {
+          if (isBanner) {
+            _bannerWCtrl.text = '$w';
+            _bannerHCtrl.text = '$h';
+          } else {
+            _reupWCtrl.text = '$w';
+            _reupHCtrl.text = '$h';
+          }
+        });
+      } else {
+        setState(() => _probeError = body['error']?.toString() ?? 'Lỗi đọc kích thước');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _probeError = 'Không kết nối backend: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _probingReup = false;
+          _probingBanner = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final outW = int.tryParse(_reupWCtrl.text) ?? _fallbackOutW;
+    final outH = int.tryParse(_reupHCtrl.text) ?? _fallbackOutH;
+    final bw = double.tryParse(_bannerWCtrl.text) ?? 0;
+    final bh = double.tryParse(_bannerHCtrl.text) ?? 0;
+    final scalePct = double.tryParse(_scaleCtrl.text) ?? 100;
+    // Mirrors backend/services/processor.py scale2ref: w=main_w,
+    // h=main_w*bannerH/bannerW — the "Scale (%)" field is a what-if override
+    // on top of that (100% == exact backend formula, no distortion).
+    final bannerHeightPx =
+        (bw > 0 && bh > 0 && outW > 0) ? (outW * bh / bw * scalePct / 100) : 0.0;
+    final overflow = bannerHeightPx > outH;
+
+    const previewFrameWidth = 160.0;
+    final previewScale = outW > 0 ? previewFrameWidth / outW : 1.0;
+    final previewFrameHeight = outH * previewScale;
+    final previewBannerHeight =
+        (overflow ? outH.toDouble() : bannerHeightPx) * previewScale;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: kInputBg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: kBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Live preview frame — real reup video aspect ratio
+          Container(
+            width: previewFrameWidth,
+            height: previewFrameHeight,
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: kBorder),
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: previewBannerHeight,
+                  child: Container(
+                    color: kAccent.withValues(alpha: 0.75),
+                    alignment: Alignment.center,
+                    child: Text(
+                      _labelCtrl.text,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.clip,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          // Controls
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Demo tỉ lệ banner (lấy kích thước thật từ file)',
+                    style: TextStyle(
+                        color: kMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5)),
+                const SizedBox(height: 8),
+                _ProbeRow(
+                  label: 'Video reup gốc',
+                  pathCtrl: _reupPathCtrl,
+                  wCtrl: _reupWCtrl,
+                  hCtrl: _reupHCtrl,
+                  probing: _probingReup,
+                  onPick: () => _pickAndProbe(isBanner: false),
+                  onChanged: () => setState(() {}),
+                ),
+                const SizedBox(height: 10),
+                _ProbeRow(
+                  label: 'Banner gốc',
+                  pathCtrl: _bannerPathCtrl,
+                  wCtrl: _bannerWCtrl,
+                  hCtrl: _bannerHCtrl,
+                  probing: _probingBanner,
+                  onPick: () => _pickAndProbe(isBanner: true),
+                  onChanged: () => setState(() {}),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _LabeledMiniInput(
+                        label: 'Scale (%)',
+                        ctrl: _scaleCtrl,
+                        onChanged: () {
+                          setState(() {});
+                          final v = double.tryParse(_scaleCtrl.text);
+                          if (v != null) widget.onScalePctChanged(v);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: _LabeledMiniInput(
+                        label: 'Text hiển thị trong banner (demo)',
+                        ctrl: _labelCtrl,
+                        onChanged: () => setState(() {}),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (_probeError != null)
+                  Text('✗ $_probeError',
+                      style: const TextStyle(color: kRed, fontSize: 10.5)),
+                Text(
+                  bannerHeightPx <= 0
+                      ? 'Chọn file (hoặc nhập tay width/height) để xem chiều cao thực tế.'
+                      : overflow
+                          ? '⚠ Banner cao ${bannerHeightPx.round()}px > video ($outH px) — banner sẽ che gần hết video.'
+                          : 'Banner sau scale: $outW × ${bannerHeightPx.round()}px (khung video: $outW×$outH).',
+                  style: TextStyle(
+                    color: overflow ? kRed : kTextDim,
+                    fontSize: 10.5,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProbeRow extends StatelessWidget {
+  final String label;
+  final TextEditingController pathCtrl;
+  final TextEditingController wCtrl;
+  final TextEditingController hCtrl;
+  final bool probing;
+  final VoidCallback onPick;
+  final VoidCallback onChanged;
+  const _ProbeRow({
+    required this.label,
+    required this.pathCtrl,
+    required this.wCtrl,
+    required this.hCtrl,
+    required this.probing,
+    required this.onPick,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: kTextDim, fontSize: 9.5)),
+        const SizedBox(height: 3),
+        Row(
+          children: [
+            Expanded(
+              child: _LabeledMiniInput(
+                  label: 'Width (px)', ctrl: wCtrl, onChanged: onChanged),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _LabeledMiniInput(
+                  label: 'Height (px)', ctrl: hCtrl, onChanged: onChanged),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 30,
+              child: OutlinedButton(
+                onPressed: probing ? null : onPick,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kAccent,
+                  side: const BorderSide(color: kBorder),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4)),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: probing
+                    ? const SizedBox(
+                        width: 11,
+                        height: 11,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 1.5, color: kAccent))
+                    : const Text('Lấy kích thước', style: TextStyle(fontSize: 10.5)),
+              ),
+            ),
+          ],
+        ),
+        if (pathCtrl.text.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(pathCtrl.text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: kMuted, fontSize: 9)),
+          ),
+      ],
+    );
+  }
+}
+
+class _LabeledMiniInput extends StatelessWidget {
+  final String label;
+  final TextEditingController ctrl;
+  final VoidCallback onChanged;
+  const _LabeledMiniInput(
+      {required this.label, required this.ctrl, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(color: kTextDim, fontSize: 9.5)),
+        const SizedBox(height: 3),
+        SizedBox(
+          height: 30,
+          child: TextField(
+            controller: ctrl,
+            onChanged: (_) => onChanged(),
+            style: const TextStyle(color: kText, fontSize: 11),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: kBg,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(4),
+                borderSide: const BorderSide(color: kBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(4),
+                borderSide: const BorderSide(color: kAccent),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

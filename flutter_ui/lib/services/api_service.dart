@@ -98,6 +98,15 @@ class ApiService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
+  /// Probe a local file's real pixel width/height (used by the banner scale
+  /// preview in Settings — path must exist on the machine running backend).
+  Future<Map<String, dynamic>> probeMediaDims(String path) async {
+    final uri = Uri.parse(
+        '${ApiService.baseUrl}/media/dims?path=${Uri.encodeComponent(path)}');
+    final res = await http.get(uri).timeout(const Duration(seconds: 15));
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
   Future<List<Map<String, dynamic>>> gdriveList(String folderId) async {
     final uri = Uri.parse(
         '${ApiService.baseUrl}/gdrive/list${folderId.isNotEmpty ? '?folder_id=${Uri.encodeComponent(folderId)}' : ''}');

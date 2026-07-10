@@ -176,11 +176,13 @@ def download_video(
     # browser, manual login/captcha). No cookie store → stop with a clear message
     # instead of failing deep in the download with a confusing anti-bot error.
     if is_douyin:
-        from backend.services.playwright_downloader import load_cookie_header
-        if not load_cookie_header():
+        from backend.services.playwright_downloader import ensure_cookies
+        # Auto-acquire guest cookies headless (ttwid/__ac_nonce) — no manual paste
+        # needed for public videos. Only stop if even the guest handshake fails.
+        if not ensure_cookies(log):
             raise RuntimeError(
-                "Chưa có cookie Douyin. Vào Settings → COOKIE DOUYIN → "
-                "'Lấy / Cập nhật Cookie' để lấy cookie trước khi tải.")
+                "Không tự lấy được cookie Douyin (mạng lỗi hoặc bị chặn). "
+                "Thử lại, hoặc vào Settings → COOKIE DOUYIN → 'Lấy / Cập nhật Cookie'.")
 
     # ── yt-dlp attempts ───────────────────────────────────────────────────────
     # yt-dlp's Douyin extractor always fails ("fresh cookies needed") regardless

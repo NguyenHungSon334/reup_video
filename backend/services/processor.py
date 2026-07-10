@@ -1,3 +1,5 @@
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -6,6 +8,60 @@ from typing import Callable
 from backend.services.progress import throttled
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+# Run ffmpeg below normal priority so the desktop UI thread always gets
+# scheduled — CPU starvation is what triggers Flutter's GPU "context lost"
+# crash on weaker machines. Lower priority lets us hand ffmpeg more threads
+# for speed without freezing the app.
+_LOW_PRIORITY = subprocess.BELOW_NORMAL_PRIORITY_CLASS if sys.platform == "win32" else 0
+_CREATE_FLAGS = _NO_WINDOW | _LOW_PRIORITY
+
+# Encode with half the cores (min 2). Leaves the rest for the UI + decode so
+# the machine stays responsive; far faster than the old single-thread cap.
+_ENCODE_THREADS = str(max(2, (os.cpu_count() or 2) // 2))
+
+_HMS = re.compile(r"(\d+):(\d+):(\d+(?:\.\d+)?)")
+_FPS = re.compile(r"([\d.]+)\s*fps")       # only read from the Stream/Video line
+_FRAME = re.compile(r"frame=\s*(\d+)")     # current encoded frame in stat lines
+_DIMS = re.compile(r"Video:.*?(\d{2,5})x(\d{2,5})")
+
+
+def _hms_to_secs(text: str) -> float | None:
+    m = _HMS.search(text)
+    if not m:
+        return None
+    h, mnt, s = m.groups()
+    return int(h) * 3600 + int(mnt) * 60 + float(s)
+
+
+def _probe_duration(src: str) -> float | None:
+    """Read the source video's duration up front. Needed to hard-cap output with
+    -t, which prevents the -shortest + -stream_loop hang at the end of encode."""
+    cmd = [_ffmpeg_exe(), "-hide_banner", "-i", src]
+    try:
+        # ffmpeg with no output exits non-zero but still prints Duration to stderr.
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=30, creationflags=_NO_WINDOW)
+    except Exception:
+        return None
+    for line in (r.stderr or "").splitlines():
+        if "Duration:" in line:
+            return _hms_to_secs(line.split("Duration:", 1)[-1])
+    return None
+
+
+def probe_dims(src: str) -> tuple[int, int] | None:
+    """Read a video/image file's pixel width/height via ffmpeg -i (no decode)."""
+    cmd = [_ffmpeg_exe(), "-hide_banner", "-i", src]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=30, creationflags=_NO_WINDOW)
+    except Exception:
+        return None
+    for line in (r.stderr or "").splitlines():
+        m = _DIMS.search(line)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    return None
 
 
 def _ffmpeg_exe() -> str:
@@ -26,9 +82,12 @@ _HW_CANDIDATES: dict[str, list[tuple[str, list[str]]]] = {
         ("h264_videotoolbox", ["-c:v", "h264_videotoolbox", "-b:v", "6000k", "-realtime", "1"]),
     ],
     "win32": [
+        # ONLY nvenc (NVIDIA, dedicated NVENC ASIC — separate from the render
+        # engine, so it doesn't fight Flutter's D3D11 UI for the GPU). qsv (Intel)
+        # and amf (AMD APU) share the SAME integrated GPU as the UI; running them
+        # alongside Flutter caused a driver TDR reset → "EGL Context Lost (12302)".
+        # No nvenc → fall through to CPU (libx264), which never touches the GPU.
         ("h264_nvenc", ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "23", "-b:v", "0"]),
-        ("h264_qsv",   ["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "23"]),
-        ("h264_amf",   ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "23", "-qp_p", "23"]),
     ],
 }
 
@@ -91,15 +150,22 @@ def process_video(
     log: Callable[[str, str], None],
     logo: str | None = None,
     music: str | None = None,
+    banner: str | None = None,
     logo_scale: int = 150,
     logo_position: str = "top_left",
     logo_opacity: float = 1.0,
+    max_height: int = 720,
+    banner_scale_pct: float = 100.0,
 ) -> str:
-    if not logo and not music:
+    if not logo and not music and not banner:
         shutil.copy2(src, dst)
         return dst
 
-    cmd = [_ffmpeg_exe(), "-y", "-threads", "2"]
+    # Probe duration so we can hard-cap the output with -t. -shortest alone hangs
+    # for minutes at the end when banner/music are infinitely looped inputs.
+    src_dur = _probe_duration(src) if (banner or music) else None
+
+    cmd = [_ffmpeg_exe(), "-y"]
     # Override possibly-invalid/unspecified color metadata on the source BEFORE
     # decode. Some Douyin clips tag a colorspace the overlay buffersrc rejects
     # outright ("[graph 0 input] Invalid color space"), which happens before any
@@ -107,36 +173,59 @@ def process_video(
     cmd += ["-colorspace", "bt709", "-color_primaries", "bt709",
             "-color_trc", "bt709", "-color_range", "tv"]
     cmd += ["-i", src]
-    logo_idx = music_idx = None
+    logo_idx = banner_idx = music_idx = None
 
+    next_idx = 1
     if logo:
-        logo_idx = 1
+        logo_idx = next_idx; next_idx += 1
         cmd += ["-i", logo]
+    if banner:
+        banner_idx = next_idx; next_idx += 1
+        # Banner is a video clip → loop it so it spans the whole reup video.
+        # Without this, -shortest would truncate output to the banner's length.
+        cmd += ["-stream_loop", "-1", "-i", banner]
     if music:
-        music_idx = 2 if logo else 1
+        music_idx = next_idx; next_idx += 1
         cmd += ["-stream_loop", "-1", "-i", music]
 
     filters: list[str] = []
     maps: list[str] = []
     codec_opts: list[str] = []
 
-    if logo:
-        pos = _LOGO_POSITIONS.get(logo_position, "10:10")
-        opacity = max(0.0, min(1.0, logo_opacity))
+    if logo or banner:
         # Normalize the base video's pixel format + color metadata before overlay.
         # Some Douyin clips carry an invalid/variable color space that makes the
         # overlay filter reinit mid-stream and abort ("Invalid color space" /
         # "Error reinitializing filters"). Pinning params here prevents the reinit.
-        base = ("[0:v]format=yuv420p,"
-                "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709[base];")
-        if opacity < 1.0:
-            filters.append(
-                f"[{logo_idx}:v]scale={logo_scale}:-1,format=rgba,colorchannelmixer=aa={opacity:.2f}[wm];"
-                f"{base}[base][wm]overlay={pos}[vout]"
-            )
-        else:
-            filters.append(f"[{logo_idx}:v]scale={logo_scale}:-1[wm];{base}[base][wm]overlay={pos}[vout]")
-        maps += ["-map", "[vout]"]
+        # Downscale to max_height BEFORE overlay — the overlay/scale2ref filters
+        # run on CPU per-frame, so fewer pixels here is the biggest speed win
+        # (QSV/nvenc only accelerate the final encode, not the filtering).
+        # -2 keeps aspect + even width; min() never upscales smaller clips.
+        # ponytail: default 720p; raise max_height in config if quality matters.
+        # setsar=1 forces square pixels. Downscaling a 9:16 clip (1080x1920 ->
+        # 406x720) yields an odd SAR (405:406) that segfaults scale2ref later —
+        # normalizing SAR here prevents that crash.
+        scale = f"scale=-2:min(ih\\,{max_height})," if max_height else ""
+        chain = [f"[0:v]{scale}setsar=1,format=yuv420p,"
+                 "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709[base]"]
+        cur = "base"
+        if logo:
+            pos = _LOGO_POSITIONS.get(logo_position, "10:10")
+            opacity = max(0.0, min(1.0, logo_opacity))
+            if opacity < 1.0:
+                chain.append(f"[{logo_idx}:v]scale={logo_scale}:-1,format=rgba,"
+                             f"colorchannelmixer=aa={opacity:.2f}[wm]")
+            else:
+                chain.append(f"[{logo_idx}:v]scale={logo_scale}:-1[wm]")
+            chain.append(f"[{cur}][wm]overlay={pos}[vlogo]")
+            cur = "vlogo"
+        if banner:
+            # Fixed banner strip: 406x181, pinned to bottom-left of a 406x720 frame.
+            chain.append(f"[{banner_idx}:v]setsar=1,scale=406:181,format=yuva420p[bnrp]")
+            chain.append(f"[{cur}][bnrp]overlay=0:539[outv]")
+            cur = "outv"
+        filters.append(";".join(chain))
+        maps += ["-map", f"[{cur}]"]
         codec_opts += _select_video_encoder(log)[1]
     else:
         maps += ["-map", "0:v"]
@@ -152,9 +241,16 @@ def process_video(
 
     if filters:
         cmd += ["-filter_complex", ";".join(filters)]
-    cmd += maps + codec_opts + ["-threads", "1", "-shortest", dst]
+    cmd += maps + codec_opts + ["-threads", _ENCODE_THREADS]
+    # Hard time-cap when duration is known (looped inputs) — deterministic stop,
+    # no -shortest end-of-stream hang. Fall back to -shortest otherwise.
+    if src_dur and src_dur > 0:
+        cmd += ["-t", f"{src_dur:.3f}"]
+    else:
+        cmd += ["-shortest"]
+    cmd += [dst]
 
-    parts = (["watermark"] if logo else []) + (["background music"] if music else [])
+    parts = (["watermark"] if logo else []) + (["banner"] if banner else []) + (["background music"] if music else [])
     log(f"▶ Adding {' + '.join(parts)}...", "info")
 
     try:
@@ -165,7 +261,7 @@ def process_video(
             text=True,
             encoding="utf-8",
             errors="replace",
-            creationflags=_NO_WINDOW,
+            creationflags=_CREATE_FLAGS,
         )
     except FileNotFoundError:
         raise RuntimeError(
@@ -175,16 +271,39 @@ def process_video(
 
     output_lines: list[str] = []
     emit = throttled(log)
+    total_secs: float | None = src_dur
+    fps: float | None = None
+    total_frames: int | None = None
     for line in proc.stdout:
         line = line.rstrip()
         if not line:
             continue
         output_lines.append(line)
         low = line.lower()
+        if total_secs is None and "duration:" in low:
+            total_secs = _hms_to_secs(line.split("Duration:", 1)[-1])
+        if fps is None and "stream" in low and "video:" in low:
+            m = _FPS.search(line)
+            if m:
+                fps = float(m.group(1))
+        if total_frames is None and total_secs and fps:
+            total_frames = round(total_secs * fps)
         if "error" in low or "invalid" in low:
             log(line, "info")  # always surface errors
-        elif "frame=" in line:
-            emit(line, "info")  # time-throttled progress spam
+        elif "time=" in line:
+            # Emit real percent + frame X/total for the UI progress display.
+            cur = _hms_to_secs(line.split("time=", 1)[-1])
+            fm = _FRAME.search(line)
+            frame_txt = ""
+            if fm and total_frames:
+                frame_txt = f" (frame {int(fm.group(1))}/{total_frames})"
+            elif fm:
+                frame_txt = f" (frame {int(fm.group(1))})"
+            if total_secs and cur is not None and total_secs > 0:
+                pct = max(0.0, min(100.0, cur / total_secs * 100))
+                emit(f"⚙ Xử lý video: {pct:.0f}%{frame_txt}", "info", pct=pct)
+            else:
+                emit(line, "info")  # no duration known → raw stat line
     proc.wait()
     if proc.returncode != 0:
         tail = "\n".join(output_lines[-20:])
