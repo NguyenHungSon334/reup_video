@@ -27,64 +27,15 @@ _DATA_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_FILE = _DATA_DIR / "token.json"
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
-_CREDS_B64 = (
-    "eyJpbnN0YWxsZWQiOnsiY2xpZW50X2lkIjoiOTY0MjUwNTE1MjA1LWlqOTJtMnZpZGkyM2Rx"
-    "ZHMyNTVnNDJ1dWZkcWRpaTE2LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tIiwicHJvamVj"
-    "dF9pZCI6Im1ldG9yeS1hOWQ4MyIsImF1dGhfdXJpIjoiaHR0cHM6Ly9hY2NvdW50cy5nb29n"
-    "bGUuY29tL28vb2F1dGgyL2F1dGgiLCJ0b2tlbl91cmkiOiJodHRwczovL29hdXRoMi5nb29n"
-    "bGVhcGlzLmNvbS90b2tlbiIsImF1dGhfcHJvdmlkZXJfeDUwOV9jZXJ0X3VybCI6Imh0dHBz"
-    "Oi8vd3d3Lmdvb2dsZWFwaXMuY29tL29hdXRoMi92MS9jZXJ0cyIsImNsaWVudF9zZWNyZXQi"
-    "OiJHT0NTUFgtVl9UUy1GLTNQVXNYbXZ6R3RaVkhpLTJaeDhtbiIsInJlZGlyZWN0X3VyaXMi"
-    "OlsiaHR0cDovL2xvY2FsaG9zdCJdfX0="
+# Service account (robot identity) — no browser, no user login, no token expiry.
+# Share the Drive folders / Shared Drive with reupbot@metory-a9d83.iam.gserviceaccount.com.
+_SA_B64 = (
+    "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAibWV0b3J5LWE5ZDgzIiwKICAicHJpdmF0ZV9rZXlfaWQiOiAiZWUyZmQ2ODEyNjMxZTk3MmIwOGUwYmIxOGZlZDE2ZmY4MThhOTAxZCIsCiAgInByaXZhdGVfa2V5IjogIi0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2N3Z2dTakFnRUFBb0lCQVFEVUptQTY0NDBmK2lOU1xudUJGenVhL0NHa2hzT3V1anNkK2dSN0Y1VUNwSlFVRllwaytQZ0x3c1loOG9RVHY3VlZsRythamdzYTd1MW1PcFxuYVhzOVh6NFF1eUNZczhDa1c2cW9pWEc0ejh2YWtjckR1S3g5MGZXcVBsVDhEMW1LTmIwc1hEZU5id2JZbUQ4a1xuV3EvdE1rVlc4U29hTjF6WnY0b21rWSt1R2taMzFBUmlUWlhjQjgyT29ENUV2b1psZ2xPUDh2YTBYOWk2YW1RM1xuTFZYSjJVVnlmbnhmVXpPSUZKQ29vOHBIa0xGeEEwZUdXc1NoSTZiemJja2xZVVQ1VDNYWjJCSndWS3I3YVh5dFxubEhyeWkvT3ljR1VqTWdXdlpiMVI5Z3QrWUt6YlV3SklUaTlzcmJYcE93ZC9ESURPdTlzaW9MY1ozdHVwZUZWd1xuS21JNVFQRlpBZ01CQUFFQ2dnRUFCSFhPd0hPSDd0d0JseHZJazNyR3Y2N0d4cTVuR3RqQ3FmOTlNelE2RjEwdFxucndhY0ZlNXZ4bGZGR094azJFVmZRYUhwRTRSRGVHdW9kUkl0MEVpcTA0dU9SV0pEYUJFeDl0RExtUnVXbm10QlxuN0kzUU9UcjErUlRPRU8zbEJOdFpYL3FMcm5KZTgwOGhjTFc1WWlRVVFoNHRpT3lRdHF2b3VjNkY5ZlByekZsdVxuY29iTisxZEJqRzQvWFpSNFE5T3dkVjF1bGs1c3JRYmppSW4rTTBQcHhzbmQ3YjU3ZlJYNTV3alRBUVJlTnFsTVxuMGxTSXB5VHFLWW84Y25NRHdvazI3OEZhWFZKSWN6dDZORFEvVlE2T21PNU9RQUJYZWVpemJRcVovd2hUem9DK1xuUWZ6a2dtRWlJS3lOUDVSdkZwUlZzMlUrWEZxNGxLWmpML0I4dW9mekl3S0JnUUQyRjl3SWllRjRiZlNra2NZOVxucXJVK3BZYzhTNFBtbGhpZXVJMW1EZXZsN1ZRbHpuVHBPQlovRHR4Rjk4UkFlSjljOXFGUityMkVSVXZPR200UVxuMERqTHRqRXFqRmlCTWE4Y3VaMUpSY1JENDZlTlNWNGJtN3I4RWw2YXRQNEY2K0V2NFNXdERMSWJ4UEh5dXhxRlxuamlmbXFPazBnVGJGR3dFdmVRS1hRWVpmQXdLQmdRRGNzTFhGQ0pkUm4rc21pU29yUWFOQlAraWYrMXdHempoMVxuN0pUMStPai93K2htcmNiT0w2T1dPbXdncVBtVUhKNWFhMDIvNE5ua3FhbFdhK0hheUNNZVJPc0tjcDdIbnhIV1xuQm9ZSkpTcllBU2R4Y3hoSzVMaEpkTG1XOFlVT0JmcWRTSkQ5b2dud005UUt6UHdMbVo3MVBPREZsdkF3cjJ0eFxuTnhtTVNjSEJjd0tCZ0haenk1Uk1rYnQrNlllaEp4T2RySG5JQVEwVHFCeUFXTDlsUTZKQXh6QTRDUTNkajBhR1xubWNWMHFMQUE3M1M4MnJCTGdpRE1tUlltcUxNKzQ0V3lRL1JCOE81eStWTE9VR1I2TDJ3S2Fjcm50RWw4YkJETFxuNTdmWE83UXB0Qyt6ZHdPdDBvMjJFN0RzSGkxZ3hBWlBBNE94Ly9ZbXorOFY3WDhsTndzSkhoMXpBb0dBZlZYT1xucGN3dlJDZ3lnSHc5K3JzWVlLSlBGeXpHSXdkVGdZV1BRL0xOUVJTZUZGSjFLZnhjUjZGK2J6NElJRm53aFNHVFxuMG5sOHhpU2xDM1BSblZNMHZxZ2RaSjJjRjNyN3dqV0tRZjlkeWJjK0UyeHVTM3FDUHhXUG9XNGhSc21XZjJVTFxuRTBESHJDZURNVzhoWmVVbEpkb2hQWlp2YXZiMWFpTUUyMnU0SW9rQ2dZRUE1VE1xRENmeUNFZnV0RW40VGEwR1xud1hOcEY5RGpIRlduKzhJeGQvbU8rKzVtdENYYlFUNW5NcnZGZU9RTTdDTW9uWXdTeDNIT2RjNXkvcURyckp6clxuSUdBdkNXWEZrdjk1VnBJMm5XcVN1VDB0NmlrRHlmTzFhc2dmcm8zMHhuUnlOOHFyWUJUU3dIS3ZQZm92UHI0VlxuOUY2UUs3Q3czZGg0UktFMWl5c1JCd2M9XG4tLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tXG4iLAogICJjbGllbnRfZW1haWwiOiAicmV1cGJvdEBtZXRvcnktYTlkODMuaWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLAogICJjbGllbnRfaWQiOiAiMTE2NDg0Njg1NzA3NDEzMzUwNzM4IiwKICAiYXV0aF91cmkiOiAiaHR0cHM6Ly9hY2NvdW50cy5nb29nbGUuY29tL28vb2F1dGgyL2F1dGgiLAogICJ0b2tlbl91cmkiOiAiaHR0cHM6Ly9vYXV0aDIuZ29vZ2xlYXBpcy5jb20vdG9rZW4iLAogICJhdXRoX3Byb3ZpZGVyX3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vb2F1dGgyL3YxL2NlcnRzIiwKICAiY2xpZW50X3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vcm9ib3QvdjEvbWV0YWRhdGEveDUwOS9yZXVwYm90JTQwbWV0b3J5LWE5ZDgzLmlhbS5nc2VydmljZWFjY291bnQuY29tIiwKICAidW5pdmVyc2VfZG9tYWluIjogImdvb2dsZWFwaXMuY29tIgp9Cg=="
 )
-_HARDCODED_CREDS = json.loads(base64.b64decode(_CREDS_B64).decode())
-
-# Pre-authorized token — bootstrapped on first run if token.json absent
-_TOKEN_B64 = (
-    "eyJ0b2tlbiI6ICJ5YTI5LmEwQVQzb05aXzQzTWJMb3U0QzkydUFjVktlT2RRUDluc1FqM1dubDZ6"
-    "OWFvVlhuWEw3R3ZVNEI3eWg4bmVTWlhQbTVkekJpX2tIX19sZElVM01hVUI3MjRxVGM3UWZmMl9t"
-    "VE0yck9qUU1OUHlGMWw1TThDdF9fTTNWVi1kM1FCOXh1TDZNNmxacVZ4aUtqVWRVTUE0QkpucXFI"
-    "ZElTblFXclhwSXZkQ1ZSNk5jZkp3cU5sYTdRTThrWmtIb2FqX0xLMVFaZXNJOGFDZ1lLQWJRU0FS"
-    "Y1NGUUhHWDJNaVlxTFJ0SzRxS3dVTjYxRDd1eWJlWUEwMjA2IiwgInJlZnJlc2hfdG9rZW4iOiAi"
-    "MS8vMGVVd1BYdnJCdVZ2akNnWUlBUkFBR0E0U053Ri1MOUlyU2J4U1lzeVNoQnk1YkpBQktKQkVn"
-    "UjBidmhOVmJvMnZscjJhd0RjUGdIMnp1cnVZTVA4YzFnUFJuTnhhdEVvYlBWdyIsICJ0b2tlbl91"
-    "cmkiOiAiaHR0cHM6Ly9vYXV0aDIuZ29vZ2xlYXBpcy5jb20vdG9rZW4iLCAiY2xpZW50X2lkIjog"
-    "Ijk2NDI1MDUxNTIwNS1pajkybTJ2aWRpMjNkcWRzMjU1ZzQydXVmZHFkaWkxNi5hcHBzLmdvb2ds"
-    "ZXVzZXJjb250ZW50LmNvbSIsICJjbGllbnRfc2VjcmV0IjogIkdPQ1NQWC1WX1RTLUYtM1BVc1ht"
-    "dnpHdFpWSGktMlp4OG1uIiwgInNjb3BlcyI6IFsiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20v"
-    "YXV0aC9kcml2ZSJdLCAidW5pdmVyc2VfZG9tYWluIjogImdvb2dsZWFwaXMuY29tIiwgImFjY291"
-    "bnQiOiAiIiwgImV4cGlyeSI6ICIyMDI2LTA2LTI1VDE4OjIyOjM4WiJ9"
-)
-
-
-def _bootstrap_from_env() -> None:
-    """Write credentials/token from env vars or hardcoded fallback if files absent."""
-    creds_json = os.environ.get("GDRIVE_CREDENTIALS_JSON", "").strip()
-    if creds_json and not CREDENTIALS_FILE.exists():
-        try:
-            CREDENTIALS_FILE.write_text(creds_json, encoding="utf-8")
-        except Exception:
-            pass
-
-    # Seed token from hardcoded pre-authorized token if missing
-    if not TOKEN_FILE.exists() or TOKEN_FILE.stat().st_size == 0:
-        try:
-            token_data = base64.b64decode(_TOKEN_B64).decode()
-            TOKEN_FILE.write_text(token_data, encoding="utf-8")
-        except Exception:
-            pass
-
-    token_json = os.environ.get("GDRIVE_TOKEN_JSON", "").strip()
-    if token_json:
-        try:
-            TOKEN_FILE.write_text(token_json, encoding="utf-8")
-        except Exception:
-            pass
+_SA_INFO = json.loads(base64.b64decode(_SA_B64).decode())
 
 try:
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.oauth2.service_account import Credentials as ServiceAccountCredentials
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
@@ -122,29 +73,20 @@ def _gdrive_service(credentials_path: str | None = None):
     if cached is not None:
         return cached
 
-    _bootstrap_from_env()
+    # Service account auth: no browser, no user login, no token expiry.
+    # Use a caller-supplied service_account JSON if given, else the baked-in one.
+    info = _SA_INFO
+    if credentials_path:
+        p = Path(credentials_path).expanduser()
+        if p.is_file():
+            try:
+                loaded = json.loads(p.read_text(encoding="utf-8"))
+                if loaded.get("type") == "service_account":
+                    info = loaded
+            except Exception:
+                pass  # fall back to baked-in service account
 
-    cred_file = Path(credentials_path).expanduser() if credentials_path else CREDENTIALS_FILE
-
-    creds = None
-    token_path = TOKEN_FILE if TOKEN_FILE.exists() else Path("/tmp/token.json")
-    if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if cred_file.exists():
-                flow = InstalledAppFlow.from_client_secrets_file(str(cred_file), SCOPES)
-            else:
-                flow = InstalledAppFlow.from_client_config(_HARDCODED_CREDS, SCOPES)
-            creds = flow.run_local_server(port=0)
-
-        save_path = TOKEN_FILE if os.access(TOKEN_FILE.parent, os.W_OK) else Path("/tmp/token.json")
-        with open(save_path, "w") as f:
-            f.write(creds.to_json())
-
+    creds = ServiceAccountCredentials.from_service_account_info(info, scopes=SCOPES)
     svc = build("drive", "v3", credentials=creds)
     cache[cache_key] = svc
     return svc

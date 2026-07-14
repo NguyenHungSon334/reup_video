@@ -14,7 +14,6 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from ..config import load_config, save_config
 from ..services.downloader import download_video
 from ..services.gdrive import (
-    TOKEN_FILE,
     upload_gdrive,
     _gdrive_service,
     list_folder_files,
@@ -273,23 +272,15 @@ async def media_dims(path: str):
 
 @router.get("/gdrive/status")
 async def gdrive_status():
-    """Check if Google Drive token is valid (no browser needed)."""
-    if not TOKEN_FILE.exists() or TOKEN_FILE.stat().st_size == 0:
-        return {"connected": False, "reason": "No token. Click Connect to authenticate."}
+    """Service account auth — no token, no browser. Just verify the service builds."""
+    if not GDRIVE_OK_CHECK():
+        return {"connected": False, "reason": "Google Drive libraries not installed."}
+    cfg              = load_config()
+    credentials_path = cfg.get("gdrive_credentials_path", "").strip() or None
     try:
-        if not GDRIVE_OK_CHECK():
-            return {"connected": False, "reason": "Google Drive libraries not installed."}
-        from google.oauth2.credentials import Credentials
-        from google.auth.transport.requests import Request
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE))
-        if creds and creds.valid:
-            return {"connected": True}
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open(TOKEN_FILE, "w") as f:
-                f.write(creds.to_json())
-            return {"connected": True}
-        return {"connected": False, "reason": "Token expired. Click Connect to re-authenticate."}
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, lambda: _gdrive_service(credentials_path))
+        return {"connected": True}
     except Exception as exc:
         return {"connected": False, "reason": str(exc)}
 
