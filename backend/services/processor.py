@@ -143,6 +143,9 @@ _LOGO_POSITIONS = {
     "bottom_right": "W-w-10:H-h-10",
 }
 
+# Seconds the video plays before the banner appears.
+_BANNER_DELAY_S = 4
+
 
 def process_video(
     src: str,
@@ -181,9 +184,8 @@ def process_video(
         cmd += ["-i", logo]
     if banner:
         banner_idx = next_idx; next_idx += 1
-        # Banner is a video clip → loop it so it spans the whole reup video.
-        # Without this, -shortest would truncate output to the banner's length.
-        cmd += ["-stream_loop", "-1", "-i", banner]
+        # Banner plays once (no loop), delayed to start at _BANNER_DELAY_S.
+        cmd += ["-i", banner]
     if music:
         music_idx = next_idx; next_idx += 1
         cmd += ["-stream_loop", "-1", "-i", music]
@@ -221,8 +223,11 @@ def process_video(
             cur = "vlogo"
         if banner:
             # Fixed banner strip: 406x181, pinned to bottom-left of a 406x720 frame.
-            chain.append(f"[{banner_idx}:v]setsar=1,scale=406:181,format=yuva420p[bnrp]")
-            chain.append(f"[{cur}][bnrp]overlay=0:539[outv]")
+            # Play once from banner's first frame, shifted to appear at t=4s.
+            chain.append(f"[{banner_idx}:v]setsar=1,scale=406:181,format=yuva420p,"
+                         f"setpts=PTS+{_BANNER_DELAY_S}/TB[bnrp]")
+            # eof_action=pass: after the (unlooped) banner ends, keep the base video.
+            chain.append(f"[{cur}][bnrp]overlay=0:539:eof_action=pass[outv]")
             cur = "outv"
         filters.append(";".join(chain))
         maps += ["-map", f"[{cur}]"]
