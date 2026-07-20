@@ -49,6 +49,30 @@ def _probe_duration(src: str) -> float | None:
     return None
 
 
+def _base_dims(src: str, max_height: int) -> tuple[int, int]:
+    """Output dims of the base video after the max_height downscale, so overlays
+    can be scaled to an explicit size instead of via scale2ref."""
+    dims = probe_dims(src)
+    if not dims:
+        return (-2, max_height or 720)
+    w, h = dims
+    if not max_height or h <= max_height:
+        return (w - w % 2, h - h % 2)
+    w2 = round(w * max_height / h)
+    return (w2 - w2 % 2, max_height - max_height % 2)
+
+
+def _has_audio(src: str) -> bool:
+    """True if the file carries at least one audio stream."""
+    cmd = [_ffmpeg_exe(), "-hide_banner", "-i", src]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=30, creationflags=_NO_WINDOW)
+    except Exception:
+        return False
+    return "Audio:" in (r.stderr or "")
+
+
 def probe_dims(src: str) -> tuple[int, int] | None:
     """Read a video/image file's pixel width/height via ffmpeg -i (no decode)."""
     cmd = [_ffmpeg_exe(), "-hide_banner", "-i", src]
@@ -222,12 +246,17 @@ def process_video(
             chain.append(f"[{cur}][wm]overlay={pos}[vlogo]")
             cur = "vlogo"
         if banner:
-            # Fixed banner strip: 406x181, pinned to bottom-left of a 406x720 frame.
+            # Banner is authored 9:16 full-frame with alpha — stretch it to the
+            # base frame and overlay at 0:0, no positioning knobs needed.
             # Play once from banner's first frame, shifted to appear at t=4s.
-            chain.append(f"[{banner_idx}:v]setsar=1,scale=406:181,format=yuva420p,"
+            # Scale to explicit base dims, NOT scale2ref: scale2ref consumes one
+            # reference frame per banner frame, so the base video freezes on its
+            # last matched frame once the (shorter) banner ends.
+            bw, bh = _base_dims(src, max_height)
+            chain.append(f"[{banner_idx}:v]setsar=1,scale={bw}:{bh},format=yuva420p,"
                          f"setpts=PTS+{_BANNER_DELAY_S}/TB[bnrp]")
             # eof_action=pass: after the (unlooped) banner ends, keep the base video.
-            chain.append(f"[{cur}][bnrp]overlay=0:539:eof_action=pass[outv]")
+            chain.append(f"[{cur}][bnrp]overlay=0:0:eof_action=pass[outv]")
             cur = "outv"
         filters.append(";".join(chain))
         maps += ["-map", f"[{cur}]"]
@@ -236,7 +265,38 @@ def process_video(
         maps += ["-map", "0:v"]
         codec_opts += ["-c:v", "copy"]
 
+    banner_has_voice = bool(banner) and _has_audio(banner)
+    # The audio bed is the background music when enabled, otherwise the source
+    # video's own audio. Music replacing source audio is the existing behaviour.
     if music:
+        bed = f"[{music_idx}:a]aresample=44100,volume=1.5[bed]"
+    elif _has_audio(src):
+        bed = "[0:a]aresample=44100[bed]"
+    else:
+        bed = None
+
+    if banner_has_voice and bed:
+        # Banner voice plays over the bed; the bed ducks while the voice speaks
+        # (sidechaincompress keyed off the voice), then recovers.
+        delay_ms = _BANNER_DELAY_S * 1000
+        filters.append(
+            f"{bed};"
+            f"[{banner_idx}:a]aresample=44100,adelay={delay_ms}|{delay_ms},"
+            f"asplit=2[voice][vkeyr];"
+            # apad: sidechaincompress ends with its SHORTEST input, so an
+            # unpadded key would truncate the bed when the voice stops.
+            f"[vkeyr]apad[vkey];"
+            f"[bed][vkey]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=800[bedd];"
+            f"[bedd][voice]amix=inputs=2:duration=first:normalize=0[aout]"
+        )
+        maps += ["-map", "[aout]"]
+        codec_opts += ["-c:a", "aac", "-b:a", "128k"]
+    elif banner_has_voice:
+        delay_ms = _BANNER_DELAY_S * 1000
+        filters.append(f"[{banner_idx}:a]adelay={delay_ms}|{delay_ms}[aout]")
+        maps += ["-map", "[aout]"]
+        codec_opts += ["-c:a", "aac", "-b:a", "128k"]
+    elif music:
         filters.append(f"[{music_idx}:a]volume=1.5[aout]")
         maps += ["-map", "[aout]"]
         codec_opts += ["-c:a", "aac", "-b:a", "128k"]

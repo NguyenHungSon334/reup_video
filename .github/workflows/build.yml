@@ -210,7 +210,9 @@ jobs:
 
       - uses: softprops/action-gh-release@v2.1.0
         with:
-          files: |
-            artifacts/Setup_ReupVideo_${{ env.APP_VERSION }}.exe
-            artifacts/ReupVideo_mac_${{ env.APP_VERSION }}.dmg
+          # Glob, not ${{ env.APP_VERSION }}: GITHUB_ENV set in the build jobs does
+          # NOT carry into this job, so the interpolated name fell back to the
+          # workflow-level APP_VERSION and matched no file — releases came out empty.
+          files: artifacts/*
+          fail_on_unmatched_files: true
           generate_release_notes: true

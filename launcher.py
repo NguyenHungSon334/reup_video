@@ -62,7 +62,7 @@ def _launch_flutter() -> "subprocess.Popen | None":
         if os.path.exists(path):
             return subprocess.Popen([path])
     # Dev fallback
-    flutter_dir = os.path.join(os.path.dirname(_EXE_DIR), "flutter_ui")
+    flutter_dir = os.path.join(_EXE_DIR, "flutter_ui")
     if os.path.isdir(flutter_dir):
         device = "macos" if sys.platform == "darwin" else "windows"
         return subprocess.Popen(["flutter", "run", f"-d{device}"], cwd=flutter_dir)
