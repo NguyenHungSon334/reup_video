@@ -33,9 +33,14 @@ from ..services.processor import process_video
 
 router = APIRouter()
 
-_job_queues:  dict[str, asyncio.Queue] = {}
+# Per-job log history. A replayable list (not a consume-once Queue) so a client
+# that navigates away, reloads, or restarts can reconnect and replay everything
+# it missed instead of losing the run.
+_job_logs:    dict[str, list[dict[str, Any]]] = {}
+_job_events:  dict[str, asyncio.Event] = {}
 _job_results: dict[str, dict[str, Any]] = {}
-_MAX_STORED_JOBS = 200  # evict oldest results beyond this limit
+_MAX_STORED_JOBS = 200   # evict oldest results beyond this limit
+_MAX_LOGS_PER_JOB = 3000  # ffmpeg progress is chatty; cap so a run can't grow forever
 
 # Lark data cache — avoid hitting Lark API on every page load
 _lark_cache: dict = {}
@@ -56,14 +61,36 @@ _data_subscribers: set[WebSocket] = set()
 
 
 def _prune_old_jobs() -> None:
-    """Evict oldest job results + orphaned queues when over limit."""
+    """Evict oldest job results + their log buffers when over limit."""
     overflow = len(_job_results) - _MAX_STORED_JOBS
     if overflow <= 0:
         return
     to_remove = list(_job_results.keys())[:overflow]
     for k in to_remove:
         _job_results.pop(k, None)
-        _job_queues.pop(k, None)
+        _job_logs.pop(k, None)
+        _job_events.pop(k, None)
+
+
+def _job_push(job_id: str, msg: dict[str, Any], loop: asyncio.AbstractEventLoop) -> None:
+    """Append a log entry and wake any connected websocket readers.
+
+    Called from the worker thread. list.append is atomic under the GIL; the
+    Event must be set on the loop thread.
+    """
+    logs = _job_logs.get(job_id)
+    if logs is None:
+        return
+    if len(logs) >= _MAX_LOGS_PER_JOB and msg.get("type") != "done":
+        if len(logs) == _MAX_LOGS_PER_JOB:
+            logs.append({"type": "warn", "message": "… log bị cắt bớt (quá dài)"})
+        else:
+            return
+    else:
+        logs.append(msg)
+    ev = _job_events.get(job_id)
+    if ev is not None:
+        loop.call_soon_threadsafe(ev.set)
 
 
 async def _broadcast_data_changed(new_records: list[dict] | None = None) -> None:
@@ -564,13 +591,11 @@ async def submit_records(body: dict):
 async def start_job(body: dict):
     job_id = str(uuid.uuid4())
     loop   = asyncio.get_running_loop()
-    q: asyncio.Queue = asyncio.Queue()
-    _job_queues[job_id] = q
+    _job_logs[job_id]   = []
+    _job_events[job_id] = asyncio.Event()
 
     def push(message: str, log_type: str = "info") -> None:
-        asyncio.run_coroutine_threadsafe(
-            q.put({"type": log_type, "message": message}), loop
-        )
+        _job_push(job_id, {"type": log_type, "message": message}, loop)
 
     def worker() -> None:
         tmp    = tempfile.mkdtemp(prefix="reup_")
@@ -669,16 +694,16 @@ async def start_job(body: dict):
         _job_results[job_id] = result
         _prune_old_jobs()
         asyncio.run_coroutine_threadsafe(_broadcast_data_changed(), loop)
-        asyncio.run_coroutine_threadsafe(
-            q.put({"type": "done", "result": result}), loop
-        )
+        _job_push(job_id, {"type": "done", "result": result}, loop)
 
-        # If WS never connected, queue is orphaned — clean it up after 5 min
-        def _deferred_queue_cleanup() -> None:
-            time.sleep(300)
-            _job_queues.pop(job_id, None)
+        # Keep the log buffer around after the job finishes so a client that was
+        # closed/navigated away can still reconnect and replay the whole run.
+        def _deferred_log_cleanup() -> None:
+            time.sleep(600)
+            _job_logs.pop(job_id, None)
+            _job_events.pop(job_id, None)
 
-        threading.Thread(target=_deferred_queue_cleanup, daemon=True).start()
+        threading.Thread(target=_deferred_log_cleanup, daemon=True).start()
 
     threading.Thread(target=worker, daemon=True).start()
     return {"job_id": job_id}
@@ -785,29 +810,47 @@ async def ws_data_events(websocket: WebSocket):
 @router.websocket("/ws/{job_id}")
 async def ws_logs(websocket: WebSocket, job_id: str):
     await websocket.accept()
-    q = _job_queues.get(job_id)
-    if q is None:
-        await websocket.send_json({"type": "error", "message": "Job not found"})
+    logs = _job_logs.get(job_id)
+    if logs is None:
+        # Buffer already cleaned up. If the result survived, hand it straight
+        # back so a reconnecting client can still settle the row.
+        result = _job_results.get(job_id)
+        if result is not None:
+            await websocket.send_json({"type": "done", "result": result})
+        else:
+            await websocket.send_json({"type": "error", "message": "Job not found"})
         await websocket.close()
         return
+
+    ev = _job_events.setdefault(job_id, asyncio.Event())
+    cursor = 0        # this client's own position — replays history from 0
+    total_waited = 0
     try:
-        total_waited = 0
         while True:
+            # Drain everything appended since we last looked.
+            while cursor < len(logs):
+                msg = logs[cursor]
+                cursor += 1
+                await websocket.send_json(msg)
+                if msg.get("type") == "done":
+                    return
+            ev.clear()
+            if cursor < len(logs):
+                continue  # appended between the drain and the clear
             try:
-                msg = await asyncio.wait_for(q.get(), timeout=25.0)
+                # ponytail: one shared Event for all readers of a job — a
+                # concurrent reader's clear() can swallow a wake-up, but the
+                # 25s timeout re-drains anyway. Per-reader events if that lag
+                # ever matters.
+                await asyncio.wait_for(ev.wait(), timeout=25.0)
+                total_waited = 0
             except asyncio.TimeoutError:
                 total_waited += 25
                 if total_waited >= 600:
                     await websocket.send_json({"type": "error", "message": "Job timed out"})
-                    break
+                    return
                 # Keepalive ping — prevents Railway proxy from closing idle WS
                 await websocket.send_json({"type": "ping"})
-                continue
-            total_waited = 0
-            await websocket.send_json(msg)
-            if msg.get("type") == "done":
-                break
     except WebSocketDisconnect:
         pass
-    finally:
-        _job_queues.pop(job_id, None)
+    # Buffer is intentionally NOT dropped here — the client may reconnect.

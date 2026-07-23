@@ -63,8 +63,19 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  Widget _buildContent() => switch (_navIdx) {
-    99  => SettingsScreen(api: _api, onBackendChanged: _saveBackendConfig),
-    _   => DataScreen(api: _api),
-  };
+  // DataScreen is kept mounted across navigation: disposing it would drop the
+  // running jobs' log sockets and progress state. Offstage skips its layout and
+  // paint while hidden; TickerMode stops its spinners from animating offstage.
+  // SettingsScreen is still built fresh each visit so it re-reads config.
+  Widget _buildContent() => Stack(
+    fit: StackFit.expand,
+    children: [
+      TickerMode(
+        enabled: _navIdx != 99,
+        child: Offstage(offstage: _navIdx == 99, child: DataScreen(api: _api)),
+      ),
+      if (_navIdx == 99)
+        SettingsScreen(api: _api, onBackendChanged: _saveBackendConfig),
+    ],
+  );
 }

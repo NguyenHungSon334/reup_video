@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../constants/colors.dart';
 import '../utils/open_url.dart';
@@ -138,11 +139,20 @@ class _DataScreenState extends State<DataScreen> {
   WebSocketChannel? _eventsChannel;
   StreamSubscription<dynamic>? _eventsSub;
 
+  // Jobs still running on the backend: recordId -> jobId. Persisted so that
+  // leaving this screen (or restarting the app) doesn't orphan them — the
+  // backend keeps a replayable log buffer, we just reconnect to it.
+  static const String _kActiveJobsKey = 'active_jobs';
+  // Static: a batch started by a previous State can still be dispatching jobs
+  // after that State was disposed. Sharing one map keeps those tracked.
+  static final _activeJobs = <String, String>{};
+
   @override
   void initState() {
     super.initState();
     _fetch();
     _connectDataEvents();
+    _restoreJobs();
   }
 
   @override
@@ -486,6 +496,50 @@ class _DataScreenState extends State<DataScreen> {
       });
   }
 
+  // ── Job persistence / reattach ──────────────────────────────────────────────
+
+  Future<void> _persistJobs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_activeJobs.isEmpty) {
+      await prefs.remove(_kActiveJobsKey);
+    } else {
+      await prefs.setString(_kActiveJobsKey, jsonEncode(_activeJobs));
+    }
+  }
+
+  /// Reconnect to jobs that were still running when this screen went away.
+  /// The backend replays each job's full log history from the start.
+  Future<void> _restoreJobs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+
+    // Union of what's on disk (previous app run) and what's still in memory
+    // (a batch that outlived the previous State).
+    final saved = <String, String>{..._activeJobs};
+    final raw = prefs.getString(_kActiveJobsKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        saved.addAll((jsonDecode(raw) as Map).cast<String, String>());
+      } on FormatException {
+        await prefs.remove(_kActiveJobsKey);
+      }
+    }
+    if (saved.isEmpty || !mounted) return;
+
+    _activeJobs.addAll(saved);
+    setState(() => _processing = true);
+    _addLog('↻ Kết nối lại ${saved.length} job đang chạy...', LogType.info);
+    for (final id in saved.keys) {
+      _setRowState(id, const _RowState('↻ Kết nối lại...', 0.05));
+    }
+
+    await Future.wait(
+        saved.entries.map((e) => _streamJob(e.value, e.key, '')));
+
+    await _fetch(silent: true);
+    if (mounted) setState(() => _processing = false);
+  }
+
   Future<void> _processRow(Map<String, String> row, Map<String, dynamic> cfg) async {
     final recordId = row['_record_id'] ?? '';
     final url = row['Link video Douyin'] ?? '';
@@ -501,8 +555,9 @@ class _DataScreenState extends State<DataScreen> {
 
     _setRowState(recordId, const _RowState('Đang bắt đầu...', 0.05));
 
+    final String jobId;
     try {
-      final jobId = await widget.api.startJob({
+      jobId = await widget.api.startJob({
         'url': url,
         'record_id': recordId,
         'use_logo': useLogo,
@@ -515,7 +570,23 @@ class _DataScreenState extends State<DataScreen> {
         'reup_gdrive_folder_id': cfg['reup_gdrive_folder_id'] ?? '',
         'local_folder': cfg['local_folder'] ?? '',
       });
+    } on Exception catch (e) {
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      _addLog('✗ $msg', LogType.error);
+      _setRowState(recordId, _RowState('✗ $msg', 1.0, isError: true));
+      return;
+    }
 
+    _activeJobs[recordId] = jobId;
+    unawaited(_persistJobs());
+    await _streamJob(jobId, recordId, url);
+  }
+
+  /// Consume a job's log websocket. Safe to call on a fresh job or on a
+  /// reconnect — the backend replays the job's history from the beginning.
+  Future<void> _streamJob(String jobId, String recordId, String url) async {
+    final label = url.isEmpty ? recordId : url;
+    try {
       final ch = widget.api.connectJobLogs(jobId);
       await for (final raw in ch.stream) {
         if (!mounted) {
@@ -530,7 +601,7 @@ class _DataScreenState extends State<DataScreen> {
           final res     = msg['result'] as Map<String, dynamic>? ?? {};
           final success = res['status'] == 'success';
           if (success) {
-            _addLog('✓ Hoàn thành: $url', LogType.success);
+            _addLog('✓ Hoàn thành: $label', LogType.success);
             _setRowState(recordId, const _RowState('✓ Xong', 1.0));
           } else {
             final errMsg = res['message'] as String? ?? 'lỗi';
@@ -581,6 +652,14 @@ class _DataScreenState extends State<DataScreen> {
       final msg = e.toString().replaceFirst('Exception: ', '');
       _addLog('✗ $msg', LogType.error);
       _setRowState(recordId, _RowState('✗ $msg', 1.0, isError: true));
+    } finally {
+      // Only forget the job when we actually saw it through. If the screen was
+      // disposed mid-stream, keep the entry on disk so _restoreJobs() can
+      // reattach to it.
+      if (mounted) {
+        _activeJobs.remove(recordId);
+        unawaited(_persistJobs());
+      }
     }
   }
 
