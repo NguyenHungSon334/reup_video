@@ -1,4 +1,5 @@
 import asyncio
+import os
 import random
 import shutil
 import tempfile
@@ -12,6 +13,12 @@ import traceback
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..config import load_config, save_config
+from ..services.cancel import (
+    JobCancelled,
+    bind as bind_cancel,
+    check as check_cancelled,
+    unbind as unbind_cancel,
+)
 from ..services.downloader import download_video
 from ..services.gdrive import (
     upload_gdrive,
@@ -39,6 +46,10 @@ router = APIRouter()
 _job_logs:    dict[str, list[dict[str, Any]]] = {}
 _job_events:  dict[str, asyncio.Event] = {}
 _job_results: dict[str, dict[str, Any]] = {}
+# Cancel flags, set by POST /jobs/{id}/cancel and honoured at checkpoints inside
+# the download / ffmpeg / upload loops. Created before the worker starts so a
+# cancel that arrives immediately is not lost.
+_job_cancels: dict[str, threading.Event] = {}
 _MAX_STORED_JOBS = 200   # evict oldest results beyond this limit
 _MAX_LOGS_PER_JOB = 3000  # ffmpeg progress is chatty; cap so a run can't grow forever
 
@@ -70,6 +81,7 @@ def _prune_old_jobs() -> None:
         _job_results.pop(k, None)
         _job_logs.pop(k, None)
         _job_events.pop(k, None)
+        _job_cancels.pop(k, None)
 
 
 def _job_push(job_id: str, msg: dict[str, Any], loop: asyncio.AbstractEventLoop) -> None:
@@ -139,14 +151,23 @@ def _download_drive_path(path: str, cfg: dict, tmp_dir: str, push) -> str | None
     if target.is_file() and target.stat().st_size > 0:
         push(f"✓ {target.name} already cached", "info")
         return str(target)
+    # Download to a per-thread .part then rename: two jobs resolving the same
+    # asset must never read a half-written file (size > 0 is not "done"), and a
+    # crashed run must not leave a truncated file that looks cached forever.
+    part = target.with_name(f"{target.name}.{threading.get_ident()}.part")
     try:
         push(f"▶ Downloading Drive file {file_id}...", "info")
-        download_gdrive_file(file_id, str(target), credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
+        download_gdrive_file(file_id, str(part), credentials_path=cfg.get("gdrive_credentials_path", "").strip() or None)
+        if part.stat().st_size == 0:
+            raise RuntimeError("Drive trả về file rỗng")
+        os.replace(part, target)  # atomic on the same filesystem
         push(f"✓ Downloaded Drive file: {target.name}", "info")
         return str(target)
     except Exception as exc:
         push(f"⚠ Drive download failed: {exc}", "warn")
         return None
+    finally:
+        part.unlink(missing_ok=True)
 
 
 _IMAGE_EXTS = {".png", ".webp", ".jpg", ".jpeg"}
@@ -156,13 +177,27 @@ _VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}
 # video in the run instead of re-fetching from Drive each time (banner is a
 # video clip, so re-downloading it per job was the biggest per-video delay).
 _ASSET_CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache" / "assets"
+# Wiped on startup: a build before the atomic-download fix could leave a
+# truncated asset here, and a truncated file looks like a valid cache hit
+# forever. Re-downloading once per process is cheap.
+shutil.rmtree(_ASSET_CACHE_DIR, ignore_errors=True)
 _ASSET_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _asset_path_cache: dict[str, str] = {}  # label -> resolved local path, for this process's lifetime
+# Serialize asset resolution: concurrent jobs would otherwise each fetch the
+# same logo/banner into the same cache file at the same time.
+_asset_lock = threading.Lock()
 
 
 def _pick_image_asset(label: str, folder_key: str, path_key: str,
                       body: dict, cfg: dict, tmp_dir: str, push,
                       exts: set[str] = _IMAGE_EXTS) -> str | None:
+    with _asset_lock:
+        return _pick_image_asset_locked(label, folder_key, path_key, body, cfg, tmp_dir, push, exts)
+
+
+def _pick_image_asset_locked(label: str, folder_key: str, path_key: str,
+                             body: dict, cfg: dict, tmp_dir: str, push,
+                             exts: set[str]) -> str | None:
     folder_id = cfg.get(folder_key, "").strip()
     path = body.get(path_key, "").strip() or cfg.get(path_key, "").strip()
     cache_key = f"{label}:{folder_id}:{path}"
@@ -591,13 +626,16 @@ async def submit_records(body: dict):
 async def start_job(body: dict):
     job_id = str(uuid.uuid4())
     loop   = asyncio.get_running_loop()
-    _job_logs[job_id]   = []
-    _job_events[job_id] = asyncio.Event()
+    _job_logs[job_id]    = []
+    _job_events[job_id]  = asyncio.Event()
+    _job_cancels[job_id] = threading.Event()
 
     def push(message: str, log_type: str = "info") -> None:
         _job_push(job_id, {"type": log_type, "message": message}, loop)
 
     def worker() -> None:
+        cancel_flag = _job_cancels[job_id]
+        bind_cancel(cancel_flag)
         tmp    = tempfile.mkdtemp(prefix="reup_")
         result: dict[str, Any] = {}
         cfg    = load_config()
@@ -626,12 +664,22 @@ async def start_job(body: dict):
                 cookies_file=cfg.get("cookies_file", "").strip() or None,
             )
 
+            check_cancelled()  # stage boundary — don't start work already cancelled
             use_logo   = body.get("use_logo", False)
             use_music  = body.get("use_music", False)
             use_banner = body.get("use_banner", cfg.get("use_banner", False))
             logo      = _pick_logo(body, cfg, tmp, push) if use_logo else None
             banner    = _pick_banner(body, cfg, tmp, push) if use_banner else None
             music, music_name = _pick_music(body, cfg, tmp, push) if use_music else (None, None)
+
+            # Fail loudly instead of quietly shipping a video without the overlay
+            # the user asked for: a missing asset used to be a warn line and the
+            # job still reported "Hoàn thành ✓".
+            missing = [n for n, on, got in (("Logo", use_logo, logo),
+                                            ("Banner", use_banner, banner),
+                                            ("Nhạc", use_music, music)) if on and not got]
+            if missing:
+                raise RuntimeError(f"Không lấy được {', '.join(missing)} — xem log phía trên")
 
             if music_name:
                 lark_update({"music_name": music_name})
@@ -655,12 +703,22 @@ async def start_job(body: dict):
                 out = video
                 push("⊘ No processing (logo + banner + music all off)", "info")
 
+            check_cancelled()  # don't upload the output of a cancelled run
+            # Every job used to emit the same "output.mp4" / "video.mp4": on Drive
+            # that made the files indistinguishable from each other, and in local
+            # mode each job overwrote the previous one. Name by record id.
+            out_name = f"{record_id or job_id[:8]}{Path(out).suffix or '.mp4'}"
+            named = Path(tmp) / out_name
+            if Path(out) != named:
+                shutil.copy2(out, named)
+                out = str(named)
+
             mode = body.get("save_to", "drive")
             if mode == "local":
                 dest_dir = body.get("local_folder", "").strip()
                 if not dest_dir:
                     raise ValueError("local_folder is required for local save")
-                final = str(Path(dest_dir) / Path(video).name)
+                final = str(Path(dest_dir) / out_name)
                 shutil.copy2(out, final)
                 push(f"✓ Saved: {final}", "success")
                 result = {"status": "success", "path": final}
@@ -684,11 +742,16 @@ async def start_job(body: dict):
 
             lark_update({"status": "Hoàn thành ✓"})
 
+        except JobCancelled:
+            push("⏹ Đã dừng job", "warn")
+            lark_update({"status": "Đã dừng"})
+            result = {"status": "cancelled", "message": "Đã dừng"}
         except Exception as exc:
             push(f"✗ ERROR: {exc}", "error")
             lark_update({"status": f"Lỗi: {exc}"})
             result = {"status": "error", "message": str(exc)}
         finally:
+            unbind_cancel()
             shutil.rmtree(tmp, ignore_errors=True)
 
         _job_results[job_id] = result
@@ -702,11 +765,25 @@ async def start_job(body: dict):
             time.sleep(600)
             _job_logs.pop(job_id, None)
             _job_events.pop(job_id, None)
+            _job_cancels.pop(job_id, None)
 
         threading.Thread(target=_deferred_log_cleanup, daemon=True).start()
 
     threading.Thread(target=worker, daemon=True).start()
     return {"job_id": job_id}
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    """Ask a running job to stop. Cooperative: the worker gives up at its next
+    checkpoint (download chunk, ffmpeg line, upload chunk), so this returns
+    immediately and the job's own 'done' message reports status 'cancelled'."""
+    event = _job_cancels.get(job_id)
+    if event is None:
+        # Already finished and pruned, or never existed — nothing to stop.
+        return {"cancelled": False, "reason": "job không còn chạy"}
+    event.set()
+    return {"cancelled": True}
 
 
 @router.get("/jobs/{job_id}")

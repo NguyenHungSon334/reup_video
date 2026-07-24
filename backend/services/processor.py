@@ -5,6 +5,7 @@ import subprocess
 import sys
 from typing import Callable
 
+from backend.services.cancel import JobCancelled, is_cancelled
 from backend.services.progress import throttled
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -340,6 +341,10 @@ def process_video(
     fps: float | None = None
     total_frames: int | None = None
     for line in proc.stdout:
+        if is_cancelled():
+            proc.kill()
+            proc.wait()
+            raise JobCancelled()
         line = line.rstrip()
         if not line:
             continue

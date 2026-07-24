@@ -10,10 +10,16 @@ import threading
 from pathlib import Path
 from typing import Callable
 
+from backend.services.cancel import check as check_cancelled
 from backend.services.progress import throttled
 
-# Limit concurrent pages open at once on the shared browser (RAM guard)
-_playwright_sem = threading.Semaphore(3)
+# One Douyin navigation at a time. Parallel navigations share one browser
+# session, so they multiply anti-bot pressure (captcha walls, 504s) and each
+# page installs a **/* route handler — three of those on the same context is
+# where the flaky "no URL intercepted" runs came from. This is NOT the
+# bottleneck: encoding is capped at 1 anyway, and the bytes are fetched
+# outside the lock by httpx, so job N+1 still downloads while job N encodes.
+_playwright_sem = threading.Semaphore(1)
 
 _DESKTOP_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -44,6 +50,17 @@ _CDN_HOSTS = (
 )
 
 _VIDEO_PATH_MARKERS = ("/video/tos/", "/video/", "mime_type=video", "video_mp4")
+
+# Live-stream endpoints. A Douyin video page embeds live previews in its
+# sidebar, and those are served from the same CDN with a video content-type.
+# Downloading one never finishes — the stream has no end and no content-length,
+# so the job hangs forever while the temp file grows without bound.
+_LIVE_MARKERS = ("pull-flv", "pull-hls", "live-push", "/stream-", ".flv", ".m3u8")
+
+
+def _is_live_url(url: str) -> bool:
+    lower = url.lower()
+    return any(m in lower for m in _LIVE_MARKERS)
 
 # Deterministic extractor: walk Douyin's embedded SSR state, find the object
 # whose aweme_id == the requested id, and return ITS play addresses. Selecting by
@@ -89,9 +106,17 @@ _EXTRACT_BY_ID_JS = r"""
 
 
 def _extract_aweme_id(url: str) -> str | None:
-    """Pull the target Douyin video id from the canonical page URL."""
-    m = re.search(r"/video/(\d+)", url) or re.search(r"(\d{15,20})", url)
-    return m.group(1) if m else None
+    """Pull the target Douyin video id from the canonical page URL.
+
+    Only id-bearing forms are accepted. A bare `\\d{15,20}` scan used to match
+    any long number in the query string (device_id, timestamps, ttwid digits),
+    producing a bogus target id that silently disabled every same-video guard.
+    """
+    for pat in (r"/video/(\d+)", r"modal_id=(\d+)", r"aweme_id=(\d+)"):
+        m = re.search(pat, url)
+        if m:
+            return m.group(1)
+    return None
 
 
 def _pick_target_url(found: list[str]) -> str | None:
@@ -167,6 +192,8 @@ def load_cookie_header() -> str:
 def _is_video_url(url: str) -> bool:
     if not any(h in url for h in _CDN_HOSTS):
         return False
+    if _is_live_url(url):
+        return False
     lower = url.lower()
     # exclude sticker/effect mp4s (small, under effectcdn paths)
     if "effectcdn" in lower or "ies.fe.effect" in lower:
@@ -212,6 +239,40 @@ class _BrowserWorker:
             threading.Thread(target=_run, daemon=True, name="playwright-loop").start()
             ready.wait()
             self._started = True
+
+    async def _teardown(self) -> None:
+        """Close the shared context + playwright driver, ignoring errors, so the
+        next _ensure_browser() launches a clean one."""
+        if self._ctx is not None:
+            try:
+                await self._ctx.close()
+            except Exception:
+                pass
+        self._ctx = None
+        self._browser = None
+        if self._pw is not None:
+            try:
+                await self._pw.stop()
+            except Exception:
+                pass
+            self._pw = None
+
+    async def _new_page(self, log: Callable):
+        """Open a page on the shared browser, relaunching it once if it died.
+
+        launch_persistent_context() leaves BrowserContext.browser as None, so the
+        liveness check in _ensure_browser can never observe a crashed Chromium:
+        every later download would fail with 'Target closed' until the whole app
+        was restarted. Opening the page IS the liveness probe.
+        """
+        await self._ensure_browser(log)
+        try:
+            return await self._ctx.new_page()
+        except Exception as exc:
+            log(f"  Shared browser is dead ({exc}) — relaunching...", "warn")
+            await self._teardown()
+            await self._ensure_browser(log)
+            return await self._ctx.new_page()
 
     async def _ensure_browser(self, log: Callable) -> None:
         if self._browser_lock is None:
@@ -354,19 +415,7 @@ class _BrowserWorker:
         """Tear down the (headless) context and relaunch a VISIBLE window so the
         user can solve a captcha. Current window stays visible; the next auto
         launch reverts to headless."""
-        if self._ctx is not None:
-            try:
-                await self._ctx.close()
-            except Exception:
-                pass
-            self._ctx = None
-            self._browser = None
-            if self._pw is not None:
-                try:
-                    await self._pw.stop()
-                except Exception:
-                    pass
-                self._pw = None
+        await self._teardown()
         self._visible = True
         try:
             await self._ensure_browser(log)
@@ -402,13 +451,16 @@ class _BrowserWorker:
 
         target_id = _extract_aweme_id(video_page_url)
         found: list[str] = []
-        detail_urls: list[str] = []  # play_addr from the aweme/detail API response
+        # play_addr from the aweme/detail API, keyed by the aweme_id it belongs
+        # to. Keyed (not a flat list) because a detail response can arrive before
+        # a short link has resolved to its id — filtering happens at use time.
+        detail_by_id: dict[str, list[str]] = {}
         api_hits: list[str] = []     # diagnostics: aweme API + CDN requests seen
 
         async def on_detail(resp: "Response") -> None:
             # Most reliable source: Douyin's own detail API returns the exact
-            # play_addr for a specific aweme_id. Verify the id matches the target
-            # so a feed-prefetched detail call can't hand us a recommended clip.
+            # play_addr for a specific aweme_id. Storing per-id is what stops a
+            # feed-prefetched detail call from handing us a recommended clip.
             if "aweme/detail" not in resp.url:
                 return
             try:
@@ -416,14 +468,16 @@ class _BrowserWorker:
             except Exception:
                 return
             ad = data.get("aweme_detail") or {}
-            if target_id and str(ad.get("aweme_id")) != str(target_id):
+            aid = str(ad.get("aweme_id") or "")
+            if not aid:
                 return
             urls = ((ad.get("video") or {}).get("play_addr") or {}).get("url_list") or []
+            bucket = detail_by_id.setdefault(aid, [])
             for u in urls:
-                if u and u not in detail_urls:
-                    detail_urls.append(u)
-            if detail_urls:
-                log(f"  Got play_addr from aweme/detail API ({target_id}).", "info")
+                if u and u not in bucket:
+                    bucket.append(u)
+            if bucket:
+                log(f"  Got play_addr from aweme/detail API ({aid}).", "info")
 
         def on_request_dbg(req: "Request") -> None:
             url = req.url
@@ -441,6 +495,8 @@ class _BrowserWorker:
             url = resp.url
             ct = resp.headers.get("content-type", "")
             if ("video" in ct or "octet-stream" in ct) and url not in found:
+                if _is_live_url(url):
+                    return  # live FLV/HLS preview, not the target clip
                 if _is_video_url(url) or any(h in url for h in _CDN_HOSTS):
                     found.append(url)
                     log(f"  Intercepted response: {url[:80]}...", "info")
@@ -465,7 +521,7 @@ class _BrowserWorker:
         async def open_and_nav():
             # Direct navigation to the target only — no homepage feed to confuse
             # interception (cookies already warm on the shared context).
-            p = await self._ctx.new_page()
+            p = await self._new_page(log)
             p.on("response", on_detail)
             p.on("request", on_request)
             p.on("request", on_request_dbg)
@@ -502,11 +558,23 @@ class _BrowserWorker:
                 page = await open_and_nav()
                 await self._wait_captcha_cleared(page, video_page_url, log)
 
+            # A short v.douyin.com link that didn't resolve upstream has no id
+            # yet — take it from the page Douyin redirected us to. Without this
+            # every same-video guard below silently switched off and whatever the
+            # feed happened to autoplay got downloaded instead of the target.
+            if not target_id:
+                target_id = _extract_aweme_id(page.url)
+                if not target_id:
+                    raise RuntimeError(
+                        f"Không xác định được aweme_id của video (url={page.url[:80]}) "
+                        "— từ chối tải để tránh nhầm sang clip gợi ý")
+                log(f"  Target aweme_id resolved from page URL: {target_id}", "info")
+
             # Guard: confirm we actually landed on the requested video, not a
             # redirect to a feed/recommended page. Anything captured on a drifted
             # page is a recommended/feed clip — accepting it downloads the WRONG
             # video, so reject outright rather than "trusting" it.
-            if target_id and target_id not in page.url:
+            if target_id not in page.url:
                 raise RuntimeError(
                     f"Playwright drifted to {page.url[:80]} (target {target_id}); "
                     "refusing to download a non-target clip")
@@ -518,10 +586,9 @@ class _BrowserWorker:
             # neither appears.
             if target_id:
                 for _ in range(8):
-                    if detail_urls:
-                        url = _pick_target_url(detail_urls)
-                        if url:
-                            return url
+                    url = _pick_target_url(detail_by_id.get(target_id, []))
+                    if url:
+                        return url
                     try:
                         by_id = await page.evaluate(_EXTRACT_BY_ID_JS, target_id)
                     except Exception:
@@ -578,7 +645,7 @@ class _BrowserWorker:
             # Diagnostics on failure: reveal what Douyin actually served so we can
             # tell "page blocked" (no media at all) from "DASH/blob" (media but
             # unusable format) from "wrong extractor" (data present, we missed it).
-            if not found and not detail_urls:
+            if not found and not detail_by_id:
                 try:
                     title = await page.title()
                 except Exception:
@@ -634,19 +701,7 @@ class _BrowserWorker:
         """Tear down any running (likely headless) browser and relaunch a VISIBLE
         window so the user can log in / solve a captcha, then save cookies. Used
         by the Settings "Get cookies" button — explicit, manual, one at a time."""
-        if self._ctx is not None:
-            try:
-                await self._ctx.close()
-            except Exception:
-                pass
-            self._ctx = None
-            self._browser = None
-            if self._pw is not None:
-                try:
-                    await self._pw.stop()
-                except Exception:
-                    pass
-                self._pw = None
+        await self._teardown()
         self._visible = True
         try:
             await self._ensure_browser(log)  # visible launch + warm-up saves JSON
@@ -657,8 +712,20 @@ class _BrowserWorker:
 _worker = _BrowserWorker()
 
 
+# Backstops for a response that never ends. A short clip is a few tens of MB and
+# takes seconds; an endless live stream sends data forever, so neither the read
+# timeout (bytes keep arriving) nor content-length (absent) ever stops it.
+_MAX_DOWNLOAD_BYTES = 600 * 1024 * 1024
+_MAX_DOWNLOAD_SECONDS = 600
+
+
 def _download_url(url: str, out_path: str, log: Callable, cookie: str = "") -> None:
+    import time
+
     import httpx
+
+    if _is_live_url(url):
+        raise RuntimeError(f"URL là luồng live, không phải video: {url[:80]}")
 
     headers = {
         "User-Agent": _DESKTOP_UA,
@@ -669,18 +736,31 @@ def _download_url(url: str, out_path: str, log: Callable, cookie: str = "") -> N
         headers["Cookie"] = cookie
     log(f"  Downloading video...", "info")
     emit = throttled(log)
+    deadline = time.monotonic() + _MAX_DOWNLOAD_SECONDS
     with httpx.Client(headers=headers, follow_redirects=True, timeout=120) as client:
         with client.stream("GET", url, timeout=120) as resp:
             resp.raise_for_status()
             total = int(resp.headers.get("content-length", 0))
+            if total > _MAX_DOWNLOAD_BYTES:
+                raise RuntimeError(f"Video quá lớn ({total // 1024 // 1024} MB)")
             downloaded = 0
             with open(out_path, "wb") as f:
                 for chunk in resp.iter_bytes(chunk_size=1024 * 1024):
+                    check_cancelled()
                     f.write(chunk)
                     downloaded += len(chunk)
+                    if downloaded > _MAX_DOWNLOAD_BYTES:
+                        raise RuntimeError(
+                            f"Tải quá {_MAX_DOWNLOAD_BYTES // 1024 // 1024} MB mà chưa hết "
+                            "— nhiều khả năng là luồng live, đã dừng")
+                    if time.monotonic() > deadline:
+                        raise RuntimeError(
+                            f"Tải quá {_MAX_DOWNLOAD_SECONDS}s chưa xong — đã dừng")
                     if total:
                         pct = downloaded / total * 100
                         emit(f"  {int(pct)}%", "info", pct=pct)
+                    else:
+                        emit(f"  {downloaded // 1024 // 1024} MB", "info")
 
 
 def seed_cookies(log: Callable) -> None:
@@ -733,6 +813,25 @@ if __name__ == "__main__":
     assert _extract_aweme_id("https://www.douyin.com/video/7412345678901234567") \
         == "7412345678901234567"
     assert _extract_aweme_id("https://v.douyin.com/abc/") is None
+    assert _extract_aweme_id("https://www.douyin.com/user/x?modal_id=7412345678901234567") \
+        == "7412345678901234567"
+    # A long number that is NOT an id must never be mistaken for the target —
+    # a bogus id disables every same-video guard.
+    assert _extract_aweme_id("https://www.douyin.com/?device_id=1234567890123456") is None
+
+    # A Douyin video page embeds live previews served from the same CDN with a
+    # video content-type. Picking one downloads forever (no end, no length).
+    _live = "https://pull-flv-q26.douyincdn.com/third/stream-119775483729543997_or4.flv"
+    _hls = "https://pull-hls-f26.douyincdn.com/third/stream-123.m3u8"
+    _clip = "https://v26-web.douyinvod.com/abc/play/x.mp4?a=1"
+    assert _is_live_url(_live) and _is_live_url(_hls) and not _is_live_url(_clip)
+    assert not _is_video_url(_live) and not _is_video_url(_hls)
+    assert _is_video_url(_clip)
+    try:
+        _download_url(_live, "unused.mp4", lambda *a, **k: None)
+        raise AssertionError("live URL must be refused before opening a socket")
+    except RuntimeError as e:
+        assert "live" in str(e), e
 
     # First-captured wins; among target variants prefer the clean ('play') one.
     wm   = "https://v26-web.douyinvod.com/aaa/playwm/x.mp4"

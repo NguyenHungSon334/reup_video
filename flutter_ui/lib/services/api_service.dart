@@ -59,6 +59,14 @@ class ApiService {
     return data['job_id'] as String;
   }
 
+  /// Ask the backend to stop a running job. Cooperative — the job's log socket
+  /// reports the actual stop, so callers don't need this response.
+  Future<void> cancelJob(String jobId) async {
+    await http
+        .post(Uri.parse('${ApiService.baseUrl}/jobs/$jobId/cancel'))
+        .timeout(const Duration(seconds: 5));
+  }
+
   WebSocketChannel connectJobLogs(String jobId) =>
       WebSocketChannel.connect(Uri.parse('${ApiService.wsBaseUrl}/ws/$jobId'));
 

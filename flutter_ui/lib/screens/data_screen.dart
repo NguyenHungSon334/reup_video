@@ -465,35 +465,95 @@ class _DataScreenState extends State<DataScreen> {
 
   // ── Process / Delete ────────────────────────────────────────────────────────
 
+  // Cap concurrency: the backend already throttles ffmpeg/Playwright, and N
+  // simultaneous job streams flood the UI with progress events → freezes.
+  // Kept low (2) so weak machines don't lose the GPU context under the flood.
+  static const int _kMaxConcurrent = 2;
+
+  /// Rows waiting for a free worker. A standing queue rather than a local list:
+  /// it lets a second "Xử lý" press append to a run that is already going, and
+  /// it lets a queued row be pulled back out when the user stops it.
+  final _queue = <Map<String, String>>[];
+  int _workers = 0;
+
+  bool _isQueued(String id) => _queue.any((r) => r['_record_id'] == id);
+
   Future<void> _processSelected() async {
     if (_selectedIds.isEmpty) return;
     final cfg = await widget.api.getConfig();
-    _logNotifier.reset();
-    setState(() => _processing = true);
+    if (!mounted) return;
 
-    final rows = _filtered;
-    final toProcess = rows.where((r) => _selectedIds.contains(r['_record_id'])).toList();
+    // Only reset the log when starting from idle — otherwise we would wipe the
+    // log of the rows still running.
+    if (_workers == 0) _logNotifier.reset();
 
-    for (final row in toProcess) {
-      final id = row['_record_id'] ?? '';
-      if (id.isNotEmpty) _setRowState(id, const _RowState('Chờ xử lý...', 0));
+    final selected = _selectedIds;
+    final toQueue = _filtered.where((r) {
+      final id = r['_record_id'] ?? '';
+      // Skip anything already running or already waiting: pressing "Xử lý"
+      // twice on the same row must not start it twice.
+      return id.isNotEmpty &&
+          selected.contains(id) &&
+          !_activeJobs.containsKey(id) &&
+          !_isQueued(id);
+    }).toList();
+
+    if (toQueue.isEmpty) {
+      _addLog('⚠ Các dòng đã chọn đang chạy hoặc đã ở trong hàng đợi', LogType.warn);
+      return;
     }
 
-    // Cap concurrency: backend already throttles ffmpeg/Playwright, and N
-    // simultaneous job streams flood the UI with progress events → freezes.
-    // Kept low (2) so weak machines don't lose the GPU context under the flood.
-    const maxConcurrent = 2;
-    for (var i = 0; i < toProcess.length; i += maxConcurrent) {
-      final batch = toProcess.skip(i).take(maxConcurrent);
-      await Future.wait(batch.map((row) => _processRow(row, cfg)));
+    for (final row in toQueue) {
+      _setRowState(row['_record_id']!, const _RowState('Chờ xử lý...', 0));
+    }
+    _queue.addAll(toQueue);
+    _addLog('+ Thêm ${toQueue.length} video vào hàng đợi (${_queue.length} đang chờ)',
+        LogType.info);
+
+    setState(() {
+      _processing = true;
+      _selectionNotifier.value = {};
+    });
+
+    while (_workers < _kMaxConcurrent && _queue.isNotEmpty) {
+      _workers++;
+      unawaited(_runWorker(cfg));
+    }
+  }
+
+  /// Pulls rows off the shared queue until it runs dry. One slow row therefore
+  /// only occupies its own slot; the other worker keeps draining the queue.
+  Future<void> _runWorker(Map<String, dynamic> cfg) async {
+    try {
+      while (mounted && _queue.isNotEmpty) {
+        await _processRow(_queue.removeAt(0), cfg);
+      }
+    } finally {
+      _workers--;
+      if (_workers == 0) {
+        await _fetch(silent: true);
+        if (mounted) setState(() => _processing = false);
+      }
+    }
+  }
+
+  /// Stop one row: drop it from the queue if it hasn't started, otherwise ask
+  /// the backend to cancel its job. The job's own log socket reports the stop.
+  Future<void> _cancelRow(String recordId) async {
+    _queue.removeWhere((r) => r['_record_id'] == recordId);
+
+    final jobId = _activeJobs[recordId];
+    if (jobId == null) {
+      _setRowState(recordId, const _RowState('⏹ Đã bỏ khỏi hàng đợi', 1.0, isError: true));
+      return;
     }
 
-    await _fetch(silent: true);
-    if (mounted)
-      setState(() {
-        _processing = false;
-        _selectionNotifier.value = {};
-      });
+    _setRowState(recordId, const _RowState('⏹ Đang dừng...', 0.99));
+    try {
+      await widget.api.cancelJob(jobId);
+    } on Exception catch (e) {
+      _addLog('⚠ Không gửi được lệnh dừng: $e', LogType.warn);
+    }
   }
 
   // ── Job persistence / reattach ──────────────────────────────────────────────
@@ -603,6 +663,9 @@ class _DataScreenState extends State<DataScreen> {
           if (success) {
             _addLog('✓ Hoàn thành: $label', LogType.success);
             _setRowState(recordId, const _RowState('✓ Xong', 1.0));
+          } else if (res['status'] == 'cancelled') {
+            _addLog('⏹ Đã dừng: $label', LogType.warn);
+            _setRowState(recordId, const _RowState('⏹ Đã dừng', 1.0, isError: true));
           } else {
             final errMsg = res['message'] as String? ?? 'lỗi';
             _addLog('✗ $errMsg', LogType.error);
@@ -946,16 +1009,21 @@ class _DataScreenState extends State<DataScreen> {
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ElevatedButton.icon(
-                        onPressed: (_processing || selected.isEmpty) ? null : _processSelected,
+                        // Stays enabled while a run is going: the selection is
+                        // appended to the running queue instead of starting a
+                        // second, competing run.
+                        onPressed: selected.isEmpty ? null : _processSelected,
                         icon: _processing
                             ? const SizedBox(
                                 width: 13, height: 13,
                                 child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white))
                             : const Icon(Icons.play_arrow_rounded, size: 16),
                         label: Text(
-                          _processing
-                              ? 'Đang xử lý...'
-                              : selected.isEmpty ? 'Xử lý' : 'Xử lý ${selected.length}',
+                          selected.isEmpty
+                              ? (_processing ? 'Đang xử lý...' : 'Xử lý')
+                              : _processing
+                                  ? 'Thêm ${selected.length} vào hàng đợi'
+                                  : 'Xử lý ${selected.length}',
                           style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                         ),
                         style: ElevatedButton.styleFrom(
@@ -1190,9 +1258,11 @@ class _DataScreenState extends State<DataScreen> {
                           ),
                           const Spacer(),
                           TextButton.icon(
-                            onPressed: _processing ? null : _processSelected,
+                            onPressed: _processSelected,
                             icon: const Icon(Icons.play_arrow_rounded, size: 14),
-                            label: Text('Xử lý ${selected.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            label: Text(
+                                _processing ? 'Thêm ${selected.length}' : 'Xử lý ${selected.length}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                             style: TextButton.styleFrom(foregroundColor: kAccent),
                           ),
                           const SizedBox(width: 4),
@@ -1260,6 +1330,7 @@ class _DataScreenState extends State<DataScreen> {
                         onLogoToggle: (v) => setState(() => _logoEnabled[id] = v),
                         onBannerToggle: (v) => setState(() => _bannerEnabled[id] = v),
                         onMusicToggle: (v) => setState(() => _musicEnabled[id] = v),
+                        onCancel: () => _cancelRow(id),
                       ),
                     );
                   },
@@ -1341,6 +1412,7 @@ class _TableRow extends StatefulWidget {
   final ValueChanged<bool> onLogoToggle;
   final ValueChanged<bool> onBannerToggle;
   final ValueChanged<bool> onMusicToggle;
+  final VoidCallback? onCancel;
 
   const _TableRow({
     required this.index,
@@ -1358,6 +1430,7 @@ class _TableRow extends StatefulWidget {
     required this.onBannerToggle,
     required this.onMusicToggle,
     this.rowStateListenable,
+    this.onCancel,
   });
 
   @override
@@ -1405,7 +1478,7 @@ class _TableRowState extends State<_TableRow> {
                   ? const _ProgressCell(null)
                   : ValueListenableBuilder<_RowState?>(
                       valueListenable: widget.rowStateListenable!,
-                      builder: (_, rs, __) => _ProgressCell(rs),
+                      builder: (_, rs, __) => _ProgressCell(rs, onCancel: widget.onCancel),
                     )),
             ],
             ...widget.dataFields.map((f) => Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1484,7 +1557,8 @@ class _ToggleCell extends StatelessWidget {
 
 class _ProgressCell extends StatelessWidget {
   final _RowState? state;
-  const _ProgressCell(this.state);
+  final VoidCallback? onCancel;
+  const _ProgressCell(this.state, {this.onCancel});
 
   @override
   Widget build(BuildContext context) {
@@ -1497,9 +1571,27 @@ class _ProgressCell extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(state!.label,
-              style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis),
+          Row(children: [
+            Expanded(
+              child: Text(state!.label,
+                  style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis),
+            ),
+            // Stop button, only while this row still has work to give up on.
+            if (!isDone && onCancel != null)
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 15,
+                  splashRadius: 12,
+                  tooltip: 'Dừng dòng này',
+                  icon: const Icon(Icons.stop_circle_outlined, color: kRed),
+                  onPressed: onCancel,
+                ),
+              ),
+          ]),
           if (!isDone) ...[
             const SizedBox(height: 4),
             ClipRRect(

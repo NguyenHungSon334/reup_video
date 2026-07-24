@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
+from backend.services.cancel import check as check_cancelled
 from backend.services.progress import throttled
 
 import base64
@@ -170,6 +171,7 @@ def upload_gdrive(src: str, folder_id: str, log: Callable[[str, str], None],
         emit = throttled(log)
         resp = None
         while resp is None:
+            check_cancelled()
             status, resp = req.next_chunk()
             if status:
                 pct = status.progress() * 100
